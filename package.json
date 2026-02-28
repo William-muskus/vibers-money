@@ -1,0 +1,20 @@
+{
+  "name": "vibers-money",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:orchestrator": "npm run dev -w @vibers/orchestrator",
+    "dev:swarm-bus": "npm run dev -w @vibers/swarm-bus-mcp",
+    "dev:computer-use": "npm run dev -w @vibers/computer-use-mcp",
+    "dev:frontend": "npm run dev -w @vibers/frontend",
+    "dev:all-windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-all.ps1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

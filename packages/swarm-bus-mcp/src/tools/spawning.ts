@@ -1,0 +1,65 @@
+/**
+ * swarm_spawn_agent: forward spawn request to Orchestrator webhook.
+ */
+import { z } from 'zod';
+import { getIdentity } from '../context.js';
+import { getAgent } from '../core/registry.js';
+import { logger } from '../logger.js';
+
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL ?? 'http://localhost:3000';
+
+export function createSpawningTools() {
+  return {
+    swarm_spawn_agent: {
+      description: 'Spawn a new agent (e.g. department manager or specialist). Forwards to Orchestrator to create workspace and launch Vibe. Only CEO or department managers can spawn; hierarchy is enforced.',
+      inputSchema: {
+        role: z.string().describe('Role name (e.g. community-manager, marketing-director)'),
+        business: z.string().describe('Business ID (must match your business)'),
+        mission: z.string().describe('Mission statement for the new agent'),
+        browser_domains: z.array(z.string()).optional().describe('Allowed domains for browser tools (e.g. ["x.com", "twitter.com"])'),
+        skills: z.array(z.string()).optional().describe('Skill names to copy into agent workspace'),
+        lifecycle: z.enum(['infinite_loop', 'task_based']).optional().describe('Default: infinite_loop'),
+      },
+      handler: async (args: {
+        role: string;
+        business: string;
+        mission: string;
+        browser_domains?: string[];
+        skills?: string[];
+        lifecycle?: 'infinite_loop' | 'task_based';
+      }) => {
+        const { businessId, agentId } = getIdentity();
+        const from = getAgent(agentId);
+        if (!from) throw new Error('Agent not registered');
+        if (from.role_type !== 'ceo' && from.role_type !== 'department_manager') {
+          throw new Error('Only CEO or department managers can spawn agents');
+        }
+        logger.info('tool', { tool: 'swarm_spawn_agent', agentId, role: args.role, business: args.business });
+        if (args.business !== businessId) throw new Error('business must match your business_id');
+
+        const res = await fetch(`${ORCHESTRATOR_URL}/api/agents/spawn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: args.role,
+            business: args.business,
+            mission: args.mission,
+            browser_domains: args.browser_domains ?? [],
+            skills: args.skills ?? [],
+            lifecycle: args.lifecycle ?? 'infinite_loop',
+            parent_agent_id: agentId,
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Orchestrator spawn failed: ${res.status} ${text}`);
+        }
+        const data = (await res.json()) as { agent_key?: string; error?: string };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+        };
+      },
+    },
+  };
+}
