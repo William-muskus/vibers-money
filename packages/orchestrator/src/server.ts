@@ -172,6 +172,7 @@ app.post('/api/agents/spawn', async (req: Request, res: Response) => {
       role?: string;
       business?: string;
       mission?: string;
+      macro_objectives?: string[];
       browser_domains?: string[];
       skills?: string[];
       lifecycle?: string;
@@ -187,6 +188,7 @@ app.post('/api/agents/spawn', async (req: Request, res: Response) => {
       role: body.role,
       business: body.business,
       mission: body.mission,
+      macro_objectives: body.macro_objectives,
       browser_domains: body.browser_domains,
       skills: body.skills,
       lifecycle: body.lifecycle,

@@ -26,12 +26,15 @@ function formatEvent(ev: BusEvent): string {
 
 export default function SwarmFeed() {
   const [events, setEvents] = useState<BusEvent[]>([]);
+  const [connected, setConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const maxEvents = 100;
+  const maxEvents = 200;
 
   useEffect(() => {
     const url = `${SWARM_BUS_URL}/api/events`;
     const es = new EventSource(url);
+
+    es.onopen = () => setConnected(true);
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data) as BusEvent;
@@ -40,7 +43,7 @@ export default function SwarmFeed() {
         // ignore
       }
     };
-    es.onerror = () => es.close();
+    es.onerror = () => setConnected(false);
     return () => es.close();
   }, []);
 
@@ -58,7 +61,10 @@ export default function SwarmFeed() {
         className="flex-1 overflow-y-auto p-2 font-mono text-xs text-gray-700 dark:text-gray-300"
       >
         {events.length === 0 && (
-          <p className="text-gray-500 dark:text-gray-400">Connecting to Swarm Bus…</p>
+          <p className="text-gray-500 dark:text-gray-400">{connected ? 'No events yet.' : 'Connecting to Swarm Bus…'}</p>
+        )}
+        {events.length > 0 && !connected && (
+          <p className="sticky top-0 z-10 bg-amber-100 py-0.5 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">Reconnecting…</p>
         )}
         {events.map((ev, i) => (
           <div key={i} className="border-b border-gray-100 py-1 dark:border-gray-700">

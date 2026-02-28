@@ -11,11 +11,12 @@ const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL ?? 'http://localhost:3000'
 export function createSpawningTools() {
   return {
     swarm_spawn_agent: {
-      description: 'Spawn a new agent (e.g. department manager or specialist). Forwards to Orchestrator to create workspace and launch Vibe. Only CEO or department managers can spawn; hierarchy is enforced.',
+      description: 'Spawn a new agent (e.g. department manager or specialist). Pass a mission brief and 3–5 macro objectives so the agent can self-configure and build their initial task list. Forwards to Orchestrator to create workspace and launch Vibe. Only CEO or department managers can spawn; hierarchy is enforced.',
       inputSchema: {
         role: z.string().describe('Role name (e.g. community-manager, marketing-director)'),
         business: z.string().describe('Business ID (must match your business)'),
-        mission: z.string().describe('Mission statement for the new agent'),
+        mission: z.string().describe('Mission brief for the new agent (2–4 sentences). Include or reference macro objectives.'),
+        macro_objectives: z.array(z.string()).optional().describe('List of 3–5 macro objectives (concrete outcomes) for the agent. They will use these to write skills and create their initial todo list.'),
         browser_domains: z.array(z.string()).optional().describe('Allowed domains for browser tools (e.g. ["x.com", "twitter.com"])'),
         skills: z.array(z.string()).optional().describe('Skill names to copy into agent workspace'),
         lifecycle: z.enum(['infinite_loop', 'task_based']).optional().describe('Default: infinite_loop'),
@@ -24,6 +25,7 @@ export function createSpawningTools() {
         role: string;
         business: string;
         mission: string;
+        macro_objectives?: string[];
         browser_domains?: string[];
         skills?: string[];
         lifecycle?: 'infinite_loop' | 'task_based';
@@ -44,6 +46,7 @@ export function createSpawningTools() {
             role: args.role,
             business: args.business,
             mission: args.mission,
+            macro_objectives: args.macro_objectives ?? [],
             browser_domains: args.browser_domains ?? [],
             skills: args.skills ?? [],
             lifecycle: args.lifecycle ?? 'infinite_loop',

@@ -1,10 +1,13 @@
 /**
  * SSE observability: subscribers receive broadcast events (messages, register, deregister, etc.).
+ * New subscribers get a replay of recent events so the feed isn't empty after load or reconnect.
  */
 import type { Response } from 'express';
 import type { Message } from '../types.js';
 
 const subscribers = new Set<Response>();
+const RECENT_MAX = 200;
+const recentEvents: BusEvent[] = [];
 
 export type BusEvent =
   | { type: 'message'; business_id: string; from_agent_id: string; from_role: string; to_agent_id: string; content: string; message_type: string }
@@ -12,11 +15,22 @@ export type BusEvent =
   | { type: 'agent_deregistered'; agent_id: string };
 
 export function addEventsSubscriber(res: Response): void {
+  for (const ev of recentEvents) {
+    try {
+      res.write(`data: ${JSON.stringify(ev)}\n\n`);
+    } catch {
+      subscribers.delete(res);
+      return;
+    }
+  }
   subscribers.add(res);
   res.on('close', () => subscribers.delete(res));
 }
 
 export function broadcastEvent(event: BusEvent): void {
+  recentEvents.push(event);
+  if (recentEvents.length > RECENT_MAX) recentEvents.shift();
+
   const data = JSON.stringify(event);
   for (const res of subscribers) {
     try {

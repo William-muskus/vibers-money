@@ -37,3 +37,8 @@ export async function sendMessage(businessId: string, content: string): Promise<
 export function businessStreamUrl(businessId: string): string {
   return `${ORCHESTRATOR_API}/business/${businessId}/stream`;
 }
+
+/** CEO-only stream for founder chat (no other agents). */
+export function ceoStreamUrl(businessId: string): string {
+  return `${ORCHESTRATOR_API}/agents/${businessId}--ceo/stream`;
+}

@@ -4,7 +4,7 @@
  */
 import type { Request, Response } from 'express';
 import { register as regAgent, deregister as deregAgent } from '../core/registry.js';
-import { clearInbox } from '../core/store.js';
+import { clearInbox, ensureInbox } from '../core/store.js';
 import { broadcastEvent } from '../core/events.js';
 import type { AgentRegistration, RoleType, Lifecycle } from '../types.js';
 import { logger } from '../logger.js';
@@ -50,6 +50,7 @@ export function handleRegister(req: Request, res: Response): void {
     wake_payload,
   };
   regAgent(reg);
+  ensureInbox(agent_id);
   broadcastEvent({ type: 'agent_registered', agent_id: agent_id, business_id, role, role_type });
   logger.info('register_ok', { agent_id, business_id, role, role_type });
   res.status(200).json({ ok: true, agent_id });

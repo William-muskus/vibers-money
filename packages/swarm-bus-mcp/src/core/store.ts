@@ -11,6 +11,11 @@ export function setOnMessageAdded(fn: (agentId: string, message: Message) => voi
   onMessageAdded = fn;
 }
 
+/** Ensure an inbox exists for the agent (e.g. at registration). */
+export function ensureInbox(agentId: string): void {
+  if (!inboxes.has(agentId)) inboxes.set(agentId, []);
+}
+
 export function getInbox(agentId: string): Message[] {
   return inboxes.get(agentId) ?? [];
 }

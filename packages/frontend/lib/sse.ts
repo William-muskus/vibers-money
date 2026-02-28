@@ -1,7 +1,8 @@
 export type StreamEvent =
   | { type: 'activity'; msg?: { role?: string; content?: string | unknown[]; type?: string; name?: string }; agent?: string }
   | { type: 'mode_switch'; mode?: string; agent?: string }
-  | { type: 'info'; message?: string };
+  | { type: 'info'; message?: string }
+  | { type: 'ask_user'; questions?: unknown[] };
 
 const MIN_RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 30000;

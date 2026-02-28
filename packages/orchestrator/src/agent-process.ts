@@ -246,7 +246,8 @@ export class AgentProcess {
           // Still waiting for the founder — don't pester, keep idling
           continue;
         } else {
-          prompt = 'Check your messages and todos. Continue your work if there is any.';
+          prompt =
+            'Check your messages and todos. Work through your full todo list (take down all pending tasks); update and create new tasks as needed; then report back to your manager. If you have no pending todos, create new tasks from your objectives and context, then report back.';
         }
       }
 
@@ -364,6 +365,12 @@ export class AgentProcess {
       this.process.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString();
         stderrBuffer += text;
+        // Vibe CLI may emit "Session termination failed: 404" when resuming (session already gone) — harmless
+        const isHarmlessSession404 = /Session termination failed:\s*404/i.test(text);
+        if (isHarmlessSession404) {
+          logger.debug('vibe_stderr', { key: this.key, data: text.slice(0, 80), suppressed: 'session_termination_404' });
+          return;
+        }
         const isNotFound =
           /not recognized|n'est pas reconnu|not found|command not found|ENOENT/i.test(text);
         if (isNotFound && !vibeNotFoundHintLogged.has(this.key)) {

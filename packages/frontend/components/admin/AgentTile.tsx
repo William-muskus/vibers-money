@@ -17,11 +17,15 @@ export default function AgentTile({
 }) {
   const [mode, setMode] = useState(initialMode);
   const [activities, setActivities] = useState<ActivityMsg[]>(initialActivities);
-  const [lastActivityTime, setLastActivityTime] = useState<number>(() => Date.now());
+  const [lastActivityTime, setLastActivityTime] = useState<number>(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const THINKING_THRESHOLD_MS = 3000;
   const [showThinking, setShowThinking] = useState(false);
+
+  useEffect(() => {
+    setLastActivityTime(Date.now());
+  }, []);
 
   useEffect(() => {
     const es = new EventSource(agentStreamUrl(agentKey));

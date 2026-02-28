@@ -6,9 +6,9 @@ const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://loc
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ businessId: string }> },
+  context: { params: Promise<{ businessId: string }> },
 ) {
-  const { businessId } = await params;
+  const { businessId } = await context.params;
   const url = `${ORCHESTRATOR_URL}/api/business/${businessId}/stream`;
 
   const res = await fetch(url, {

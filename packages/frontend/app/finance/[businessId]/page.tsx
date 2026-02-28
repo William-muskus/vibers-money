@@ -1,10 +1,8 @@
 import FinancePageClient from '@/components/finance/FinancePageClient';
 
-export default async function FinancePage({
-  params,
-}: {
+export default async function FinancePage(props: {
   params: Promise<{ businessId: string }>;
 }) {
-  const { businessId } = await params;
+  const { businessId } = await props.params;
   return <FinancePageClient businessId={businessId ?? ''} />;
 }
