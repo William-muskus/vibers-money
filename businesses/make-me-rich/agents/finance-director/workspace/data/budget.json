@@ -1,0 +1,30 @@
+{
+  "budget": {
+    "monthly": {
+      "marketing": 5000,
+      "operations": 3000,
+      "development": 4000,
+      "overhead": 2000,
+      "miscellaneous": 1000
+    },
+    "quarterly": {
+      "marketing": 15000,
+      "operations": 9000,
+      "development": 12000,
+      "overhead": 6000,
+      "miscellaneous": 3000
+    }
+  },
+  "categories": [
+    "marketing",
+    "operations", 
+    "development",
+    "overhead",
+    "miscellaneous"
+  ],
+  "thresholds": {
+    "warning": 0.8,
+    "alert": 0.9,
+    "critical": 1.0
+  }
+}

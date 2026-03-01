@@ -212,6 +212,107 @@
   }
 }
 
+/* Matrix / post-punk mosaic – digital rain per tile */
+@keyframes matrix-rain-fall {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+/* Brighten rain chars when tile lights – higher luminosity */
+@keyframes matrix-rain-brighten {
+  0%, 4.99% { filter: brightness(1); }
+  5%, 8.99% { filter: brightness(3.4); }
+  9%, 100% { filter: brightness(1); }
+}
+
+/* Increase rain opacity when tile lights – characters pop more */
+@keyframes matrix-rain-opacity {
+  0%, 4.99% { opacity: 1; }
+  5%, 8.99% { opacity: 1.5; }
+  9%, 100% { opacity: 1; }
+}
+
+/* Lit overlay – single curve for all “lit” effects so they stay in sync */
+@keyframes matrix-tile-lit {
+  0%, 4.99% { opacity: 0; }
+  5%, 8.99% { opacity: 1; }
+  9%, 100% { opacity: 0; }
+}
+
+/* Retro inner glow when lit – max luminosity / retrolighting */
+.matrix-tile-lit-layer {
+  box-shadow: inset 0 0 30px rgba(200, 255, 220, 0.25);
+  filter: brightness(1.08) contrast(1.05);
+}
+
+/* Glow: same opacity curve as lit overlay – one visual load, no double flash */
+@keyframes matrix-tile-glow {
+  0%, 4.99% {
+    opacity: 0;
+    box-shadow: none;
+  }
+  5%, 8.99% {
+    opacity: 1;
+    box-shadow:
+      0 0 10px rgba(var(--tile-rgb-bright, 200, 255, 220), 0.75),
+      0 0 24px rgba(var(--tile-rgb-bright, 200, 255, 220), 0.45),
+      0 0 40px rgba(var(--tile-rgb-bright, 200, 255, 220), 0.18);
+  }
+  9%, 100% {
+    opacity: 0;
+    box-shadow: none;
+  }
+}
+
+/* Expanding ring – starts instantly when tile lights, then expands and fades */
+@keyframes matrix-ripple {
+  0%, 4.99% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  5% {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  6% {
+    transform: scale(1.5);
+    opacity: 0.6;
+  }
+  7.5% {
+    transform: scale(2.8);
+    opacity: 0.3;
+  }
+  8.99% {
+    transform: scale(4);
+    opacity: 0.08;
+  }
+  9%, 100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.matrix-rain-column {
+  height: 200%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+/* 12 lines (6 chars × 2 for loop) – each line 1/12 of column height */
+.matrix-rain-char {
+  flex: 0 0 16.667%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.85vmin;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
 /* Subtle background drift – adds movement to mineral texture */
 @keyframes bg-drift {
   0%, 100% { transform: scale(1) translate(0, 0); }
