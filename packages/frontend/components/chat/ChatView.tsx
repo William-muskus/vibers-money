@@ -4,6 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { sendMessage, ceoStreamUrl } from '@/lib/api';
 import { subscribeBusinessStream } from '@/lib/sse';
+import {
+  getCeoChatMessagesFromIdb,
+  setCeoChatMessagesInIdb,
+  type ChatMessage as IdbChatMessage,
+} from '@/lib/idb-ceo-chat';
 import MessageBubble from './MessageBubble';
 import Composer from './Composer';
 
@@ -64,8 +69,22 @@ export default function ChatView({
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     initialMessage?.trim()
       ? [{ kind: 'text', role: 'user', content: initialMessage.trim() }]
-      : []
+      : [],
   );
+
+  // Load full thread from IndexedDB (all user + CEO messages); restore on mount / business change
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    getCeoChatMessagesFromIdb(businessId).then((stored) => {
+      if (stored.length > 0) {
+        stored.forEach((m) => {
+          const id = (m as { id?: string }).id;
+          if (id) seenIdsRef.current.add(id);
+        });
+        setMessages(stored as ChatMessage[]);
+      }
+    });
+  }, [businessId]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [waitingForReply, setWaitingForReply] = useState(false);
@@ -77,6 +96,16 @@ export default function ChatView({
   const seenIdsRef = useRef(new Set<string>());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamUrl = ceoStreamUrl(businessId);
+
+  // Seed seen IDs from restored cache so we don't duplicate assistant messages from stream
+  const seededRef = useRef(false);
+  if (!seededRef.current && messages.length > 0) {
+    seededRef.current = true;
+    messages.forEach((m) => {
+      const id = (m as { id?: string }).id;
+      if (id) seenIdsRef.current.add(id);
+    });
+  }
 
   const handleAnswer = useCallback(
     async (answer: string) => {
@@ -180,6 +209,12 @@ export default function ChatView({
     );
     return unsubscribe;
   }, [businessId, streamUrl]);
+
+  // Persist full thread (all user + CEO messages) in IndexedDB
+  useEffect(() => {
+    if (messages.length === 0) return;
+    setCeoChatMessagesInIdb(businessId, messages as IdbChatMessage[]).catch(() => {});
+  }, [businessId, messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

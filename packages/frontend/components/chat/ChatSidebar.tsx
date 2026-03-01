@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { getMyBusinessIds } from '@/lib/local-businesses';
+import { getMyBusinessIds, syncWithServerAndRemoveDeleted } from '@/lib/local-businesses';
 
 export default function ChatSidebar({ currentBusinessId = '' }: { currentBusinessId?: string }) {
   const pathname = usePathname();
@@ -11,7 +11,9 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    setBusinessIds(getMyBusinessIds());
+    syncWithServerAndRemoveDeleted().then(() => {
+      setBusinessIds(getMyBusinessIds());
+    });
   }, []);
 
   return (

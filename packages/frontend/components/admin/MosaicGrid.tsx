@@ -9,6 +9,7 @@ import OrgTreeTile from './OrgTreeTile';
 const prefix = (businessId: string) => `${businessId}--`;
 
 const MIN_TILE_PX = 120;
+const RESIZE_DEBOUNCE_MS = 80;
 
 function filterByBusiness(keys: string[], businessId: string | undefined): string[] {
   if (!businessId) return keys;
@@ -21,6 +22,7 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
   const [stats, setStats] = useState({ businessCount: 0, agentCount: 0 });
   const [gridSize, setGridSize] = useState({ w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastStableSizeRef = useRef({ w: 0, h: 0 });
 
   const agentKeys = filterByBusiness(allAgentKeys, businessId);
   const tileCount = (businessId ? 1 : 0) + agentKeys.length;
@@ -28,12 +30,23 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0]?.contentRect ?? { width: 0, height: 0 };
-      setGridSize({ w: Math.max(0, width), h: Math.max(0, height) });
+      const w = Math.round(Math.max(0, width));
+      const h = Math.round(Math.max(0, height));
+      if (debounceId) clearTimeout(debounceId);
+      debounceId = setTimeout(() => {
+        debounceId = null;
+        lastStableSizeRef.current = { w, h };
+        setGridSize({ w, h });
+      }, RESIZE_DEBOUNCE_MS);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (debounceId) clearTimeout(debounceId);
+      ro.disconnect();
+    };
   }, []);
 
   const { cols, rows, cellPx } = useMemo(() => {
@@ -41,17 +54,26 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
     const w = gridSize.w;
     const h = gridSize.h;
     const minCols = 2;
-    if (n === 0 || w <= 0 || h <= 0)
-      return { cols: minCols, rows: 1, cellPx: MIN_TILE_PX };
+    if (n === 0) return { cols: minCols, rows: 1, cellPx: MIN_TILE_PX };
+    if (w <= 0 || h <= 0) {
+      const prev = lastStableSizeRef.current;
+      if (prev.w > 0 && prev.h > 0) return { cols: minCols, rows: 1, cellPx: MIN_TILE_PX };
+      return { cols: minCols, rows: Math.ceil(n / minCols), cellPx: MIN_TILE_PX };
+    }
     const maxCols = Math.max(minCols, Math.floor(w / MIN_TILE_PX));
-    // Prefer fewer columns (more rows, bigger square tiles). Use smallest c that fits in height
-    // so we get 2+ rows when there's room instead of one long row.
-    for (let c = minCols; c <= maxCols; c++) {
+    // Prefer more columns (e.g. 3×2) over fewer (2×3) so the mosaic is squarer and tiles can be square
+    for (let c = maxCols; c >= minCols; c--) {
       const r = Math.ceil(n / c);
       const cellPxVal = w / c;
       if (r * cellPxVal <= h) return { cols: c, rows: r, cellPx: cellPxVal };
     }
-    return { cols: minCols, rows: n, cellPx: Math.min(w / minCols, h / n) };
+    const fallbackRows = Math.ceil(n / minCols);
+    const fallbackCellPx = Math.min(w / minCols, h / fallbackRows);
+    return {
+      cols: minCols,
+      rows: fallbackRows,
+      cellPx: Math.max(1, fallbackCellPx),
+    };
   }, [tileCount, gridSize.w, gridSize.h]);
 
   useEffect(() => {

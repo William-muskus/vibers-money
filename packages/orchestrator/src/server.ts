@@ -23,6 +23,7 @@ import {
   spawnAgent,
   injectFounderMessage,
   getBusinessTree,
+  listBusinessIdsFromDisk,
 } from './spawner.js';
 import { logger } from './logger.js';
 
@@ -148,9 +149,10 @@ app.get('/api/admin/agents', (_req: Request, res: Response) => {
   res.json({ agents: agents.map((p) => p.key) });
 });
 
-/** GET /api/admin/businesses — List of business IDs (for Founder Chat selector). */
-app.get('/api/admin/businesses', (_req: Request, res: Response) => {
-  res.json({ businessIds: getBusinessIds() });
+/** GET /api/admin/businesses — List of business IDs from disk (deleted folders disappear; frontend can clear cache). */
+app.get('/api/admin/businesses', async (_req: Request, res: Response) => {
+  const businessIds = await listBusinessIdsFromDisk();
+  res.json({ businessIds });
 });
 
 app.get('/health', (_req: Request, res: Response) => {

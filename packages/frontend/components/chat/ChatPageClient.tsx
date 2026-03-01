@@ -285,7 +285,7 @@ export default function ChatPageClient({
                   role="separator"
                   aria-label="Resize mosaic and swarm height"
                   onMouseDown={startSwarmResize}
-                  className="h-1.5 shrink-0 cursor-row-resize select-none bg-transparent"
+                  className="h-4 shrink-0 cursor-row-resize select-none bg-transparent"
                 />
                 <div
                   className="min-h-0 shrink-0 overflow-hidden"

@@ -4,6 +4,7 @@
  * Persisted in both localStorage and IndexedDB for offline resilience.
  */
 import { getMyBusinessIdsFromIdb, setMyBusinessIdsInIdb } from './idb-my-businesses';
+import { deleteCeoChatMessagesFromIdb } from './idb-ceo-chat';
 
 const STORAGE_KEY = 'vibers_my_business_ids';
 
@@ -75,6 +76,29 @@ export function addMyBusinessId(businessId: string): void {
 
 export function removeMyBusinessId(businessId: string): void {
   write(read().filter((id) => id !== businessId));
+}
+
+/**
+ * Fetch business IDs that exist on disk from the server; remove from local cache
+ * and clear CEO chat IndexedDB for any cached business that no longer exists.
+ * Call when loading the app or sidebar so deleted folders disappear from the UI.
+ */
+export async function syncWithServerAndRemoveDeleted(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const { getAdminBusinesses } = await import('./admin-api');
+    const { businessIds: validIds } = await getAdminBusinesses();
+    const validSet = new Set(validIds ?? []);
+    const cached = read();
+    for (const id of cached) {
+      if (!validSet.has(id)) {
+        removeMyBusinessId(id);
+        deleteCeoChatMessagesFromIdb(id).catch(() => {});
+      }
+    }
+  } catch {
+    // offline or orchestrator down — leave cache as-is
+  }
 }
 
 /**

@@ -12,7 +12,7 @@ description: Spawn a new agent (director or specialist). Use mcp_swarm_spawn_age
 ## How to use
 Call the MCP tool **`mcp_swarm_spawn_agent`** with:
 
-- **role**: Role name (e.g. `security-director`, `marketing-director`, `community-manager`).
+- **role**: Role name (e.g. `security-director`, `cto`, `marketing-director`, `product-director`, `finance-director`, `community-manager`).
 - **business**: Business ID (must match your business).
 - **mission**: Clear mission statement (what they own, goals, constraints).
 - **macro_objectives** (required): JSON array of 3–5 concrete outcomes (e.g. `["Define security policy", "Draft first content calendar"]`). The new agent uses these to self-configure and build their initial todo list. Always pass this when spawning.
@@ -23,6 +23,6 @@ Call the MCP tool **`mcp_swarm_spawn_agent`** with:
 The Orchestrator creates the workspace, **writes AGENTS.md and config.toml** from the mission and role, copies skills, and starts the agent. You do not write AGENTS.md yourself. After spawn, send a short welcome or brief via `mcp_swarm_send_message` if needed.
 
 ## Convention (same tool for CEO and directors)
-- **CEO**: Spawn Security Director first, then department managers (Marketing, Product, Finance). Pass mission + **macro_objectives** so they self-configure and create their initial task list. Then spawn specialists as needed.
+- **CEO**: Spawn Security Director first, then CTO, then department managers (Marketing, Product, Finance). Pass mission + **macro_objectives** so they self-configure and create their initial task list. Then spawn specialists as needed.
 - **Department managers**: Spawn your specialists (e.g. Community Manager, Copywriter) with a clear mission and **macro_objectives** (required) for their first-cycle task list.
 - One skill, one tool; who spawns whom is convention, not a different API.
