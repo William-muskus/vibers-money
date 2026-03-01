@@ -35,7 +35,7 @@ export default async function RootLayout(props: {
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen font-sans antialiased" style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }} suppressHydrationWarning>
+      <body className="min-h-screen font-sans antialiased bg-[#0c0c12]" style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }} suppressHydrationWarning>
         {props.children}
         <RegisterSW />
       </body>

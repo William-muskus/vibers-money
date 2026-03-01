@@ -98,41 +98,118 @@
   100% { background-position: 0% 50%; }
 }
 
-/* Agent tile – pulse with propagating glow (rings spread outward) */
+/* Agent tile – square fades a bit quicker */
 @keyframes tile-pulse {
-  0%, 2%, 100% {
-    opacity: 0.06;
-    box-shadow: none;
-  }
-  5% {
-    opacity: 0.12;
-    box-shadow:
-      0 0 12px 2px rgba(99, 102, 241, 0.08),
-      0 0 32px 8px rgba(99, 102, 241, 0.05),
-      0 0 56px 18px rgba(99, 102, 241, 0.03),
-      0 0 88px 28px rgba(99, 102, 241, 0.018),
-      0 0 120px 40px rgba(99, 102, 241, 0.01);
-  }
-  8% {
-    opacity: 0.14;
-    box-shadow:
-      0 0 14px 3px rgba(99, 102, 241, 0.07),
-      0 0 36px 10px rgba(99, 102, 241, 0.045),
-      0 0 64px 22px rgba(99, 102, 241, 0.028),
-      0 0 96px 34px rgba(99, 102, 241, 0.016),
-      0 0 128px 48px rgba(99, 102, 241, 0.008);
-  }
-  11% {
-    opacity: 0.06;
-    box-shadow: none;
-  }
+  0%, 2%, 100% { opacity: 0.03; }
+  5% { opacity: 0.7; }
+  8% { opacity: 0.8; }
+  9% { opacity: 0.45; }
+  10% { opacity: 0.12; }
+  11%, 100% { opacity: 0.03; }
 }
 
-/* Noise only on the glow – same timing as pulse, visible only when lit */
+/* Glow: lingers longer, eases out instead of cutting off */
+@keyframes tile-glow {
+  0%, 2%, 100% { box-shadow: none; }
+  5% {
+    box-shadow:
+      0 0 32px rgba(var(--tile-rgb, 99, 102, 241), 0.35),
+      0 0 72px rgba(var(--tile-rgb, 99, 102, 241), 0.22),
+      0 0 120px rgba(var(--tile-rgb, 99, 102, 241), 0.14),
+      0 0 180px rgba(var(--tile-rgb, 99, 102, 241), 0.08),
+      0 0 260px rgba(var(--tile-rgb, 99, 102, 241), 0.04),
+      0 0 340px rgba(var(--tile-rgb, 99, 102, 241), 0.02);
+  }
+  8% {
+    box-shadow:
+      0 0 40px rgba(var(--tile-rgb, 99, 102, 241), 0.4),
+      0 0 88px rgba(var(--tile-rgb, 99, 102, 241), 0.25),
+      0 0 144px rgba(var(--tile-rgb, 99, 102, 241), 0.15),
+      0 0 212px rgba(var(--tile-rgb, 99, 102, 241), 0.08),
+      0 0 280px rgba(var(--tile-rgb, 99, 102, 241), 0.04),
+      0 0 360px rgba(var(--tile-rgb, 99, 102, 241), 0.02);
+  }
+  10% {
+    box-shadow:
+      0 0 36px rgba(var(--tile-rgb, 99, 102, 241), 0.28),
+      0 0 80px rgba(var(--tile-rgb, 99, 102, 241), 0.16),
+      0 0 132px rgba(var(--tile-rgb, 99, 102, 241), 0.09),
+      0 0 200px rgba(var(--tile-rgb, 99, 102, 241), 0.04);
+  }
+  13% {
+    box-shadow:
+      0 0 40px rgba(var(--tile-rgb, 99, 102, 241), 0.2),
+      0 0 88px rgba(var(--tile-rgb, 99, 102, 241), 0.1),
+      0 0 140px rgba(var(--tile-rgb, 99, 102, 241), 0.05);
+  }
+  18% {
+    box-shadow:
+      0 0 40px rgba(var(--tile-rgb, 99, 102, 241), 0.1),
+      0 0 88px rgba(var(--tile-rgb, 99, 102, 241), 0.05),
+      0 0 140px rgba(var(--tile-rgb, 99, 102, 241), 0.02);
+  }
+  24% {
+    box-shadow:
+      0 0 48px rgba(var(--tile-rgb, 99, 102, 241), 0.04),
+      0 0 100px rgba(var(--tile-rgb, 99, 102, 241), 0.02);
+  }
+  28%, 100% { box-shadow: none; }
+}
+
+/* Square fill – faster drop so curve isn’t too slow */
+@keyframes tile-lit {
+  0%, 2%, 100% { opacity: 0; }
+  5% { opacity: 1; }
+  8% { opacity: 1; }
+  9% { opacity: 0.5; }
+  10% { opacity: 0.1; }
+  11%, 100% { opacity: 0; }
+}
+
+/* Noise – persists a bit after square (light persistence) */
 @keyframes tile-pulse-noise {
   0%, 2%, 100% { opacity: 0; }
-  5%, 8% { opacity: 0.06; }
-  11% { opacity: 0; }
+  5%, 8% { opacity: 0.04; }
+  10% { opacity: 0.025; }
+  13% { opacity: 0.015; }
+  17% { opacity: 0.006; }
+  21% { opacity: 0; }
+}
+
+/* Ripple: fades slower than square – light persistence */
+@keyframes tile-ripple {
+  0%, 2% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  4% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  7% {
+    transform: scale(2.2);
+    opacity: 0.4;
+  }
+  10% {
+    transform: scale(3.2);
+    opacity: 0.25;
+  }
+  13% {
+    transform: scale(3.6);
+    opacity: 0.18;
+  }
+  18% {
+    transform: scale(4);
+    opacity: 0.08;
+  }
+  24% {
+    transform: scale(4);
+    opacity: 0.02;
+  }
+  28%, 100% {
+    transform: scale(4);
+    opacity: 0;
+  }
 }
 
 /* Subtle background drift – adds movement to mineral texture */

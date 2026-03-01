@@ -17,6 +17,7 @@ import {
   getAllAgents,
   getBusinessIds,
 } from './registry.js';
+import { setBusinessFounder, canAccess as ownershipCanAccess } from './ownership.js';
 import {
   createBusinessAndSpawnCEO,
   spawnAgent,
@@ -24,12 +25,27 @@ import {
 } from './spawner.js';
 import { logger } from './logger.js';
 
+function normalizeBusinessId(id: string): string {
+  return id.replace(/^-+|-+$/g, '').replace(/-+/g, '-');
+}
+
+/** Resolve agents by business id (normalized or legacy with trailing dash). */
+function getProcessesForBusiness(id: string): ReturnType<typeof getAgentsByBusiness> {
+  const n = normalizeBusinessId(id);
+  let p = getAgentsByBusiness(n);
+  if (p.length) return p;
+  p = getAgentsByBusiness(id);
+  if (p.length) return p;
+  if (n !== id) return getAgentsByBusiness(n + '-');
+  return [];
+}
+
 const app = express();
 app.use(
   cors({
     origin: '*',
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type'],
+    allowedHeaders: ['Content-Type', 'X-Founder-Session-Id'],
     exposedHeaders: ['Content-Type'],
   }),
 );
@@ -39,6 +55,22 @@ app.use((req: Request, _res: Response, next) => {
   logger.debug('request', { method: req.method, path: req.path });
   next();
 });
+
+function getSessionId(req: Request): string | undefined {
+  const header = req.headers['x-founder-session-id'];
+  if (typeof header === 'string') return header;
+  const q = req.query?.session_id;
+  const s = Array.isArray(q) ? q[0] : q;
+  return typeof s === 'string' ? s : undefined;
+}
+
+function requireOwnershipIfSession(businessId: string, req: Request, res: Response): boolean {
+  const sessionId = getSessionId(req);
+  if (!sessionId) return true;
+  if (ownershipCanAccess(businessId, sessionId)) return true;
+  res.status(403).json({ error: 'Access denied', businessId });
+  return false;
+}
 
 function sseHeaders(res: Response): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -52,7 +84,12 @@ function sseHeaders(res: Response): void {
 /** GET /api/agents/:key/stream — SSE per agent (activity + screencast). */
 app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
   const { key } = req.params;
-  const process = getAgent(key);
+  const businessId = key.includes('--') ? key.split('--')[0] : key;
+  if (!requireOwnershipIfSession(normalizeBusinessId(businessId), req, res)) return;
+  let process = getAgent(key);
+  if (!process && key.endsWith('--ceo')) {
+    process = getAgent(key.slice(0, -'--ceo'.length) + '---ceo');
+  }
   if (!process) {
     logger.warn('stream_not_found', { key });
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -66,7 +103,11 @@ app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
 /** GET /api/business/:id/stream — SSE for all agents in a business. */
 app.get('/api/business/:id/stream', (req: Request, res: Response) => {
   const { id: businessId } = req.params;
-  const processes = getAgentsByBusiness(businessId);
+  const normId = normalizeBusinessId(businessId);
+  if (!requireOwnershipIfSession(normId, req, res)) return;
+  let processes = getAgentsByBusiness(normId);
+  if (processes.length === 0) processes = getAgentsByBusiness(businessId);
+  if (processes.length === 0 && normId !== businessId) processes = getAgentsByBusiness(normId + '-');
   if (processes.length === 0) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(404).json({ error: 'Business not found or no agents', businessId });
@@ -118,8 +159,9 @@ app.get('/health', (_req: Request, res: Response) => {
 /** POST /api/business/create — Create business + spawn CEO. */
 app.post('/api/business/create', async (req: Request, res: Response) => {
   try {
-    const body = req.body as { business_id?: string; name?: string; founder_prompt?: string };
-    const businessId = body.business_id ?? body.name?.toLowerCase().replace(/\s+/g, '-') ?? undefined;
+    const body = req.body as { business_id?: string; name?: string; founder_prompt?: string; founder_session_id?: string };
+    const raw = body.business_id ?? body.name?.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') ?? undefined;
+    const businessId = raw ? normalizeBusinessId(raw) : undefined;
     if (!businessId) {
       logger.warn('business_create_missing_id', { body: Object.keys(body) });
       res.status(400).json({ error: 'Missing business_id or name' });
@@ -131,6 +173,9 @@ app.post('/api/business/create', async (req: Request, res: Response) => {
       body.name,
       body.founder_prompt,
     );
+    if (body.founder_session_id) {
+      setBusinessFounder(businessId, body.founder_session_id);
+    }
     logger.info('business_create_ok', { businessId, key: result.agentKey });
     res.status(201).json(result);
   } catch (err) {
@@ -139,10 +184,31 @@ app.post('/api/business/create', async (req: Request, res: Response) => {
   }
 });
 
+/** GET /api/business/:id/can-access — Check if session can access business. */
+app.get('/api/business/:id/can-access', (req: Request, res: Response) => {
+  const businessId = req.params.id;
+  const sessionId = getSessionId(req);
+  const allowed = !!sessionId && ownershipCanAccess(businessId, sessionId);
+  res.json({ allowed });
+});
+
+/** POST /api/business/link-session — Link business to founder session (e.g. after Stripe). */
+app.post('/api/business/link-session', (req: Request, res: Response) => {
+  const body = req.body as { business_id?: string; founder_session_id?: string };
+  if (!body.business_id || !body.founder_session_id) {
+    res.status(400).json({ error: 'Missing business_id or founder_session_id' });
+    return;
+  }
+  setBusinessFounder(body.business_id, body.founder_session_id);
+  logger.info('business_link_session', { businessId: body.business_id });
+  res.json({ ok: true });
+});
+
 /** POST /api/business/:id/message — Founder message -> Swarm Bus inject (CEO). */
 app.post('/api/business/:id/message', async (req: Request, res: Response) => {
   try {
     const businessId = req.params.id;
+    if (!requireOwnershipIfSession(businessId, req, res)) return;
     const body = req.body as { content?: string; message?: string };
     const content = body.content ?? body.message;
     if (!content) {
@@ -153,7 +219,7 @@ app.post('/api/business/:id/message', async (req: Request, res: Response) => {
     logger.info('message_inject', { businessId, contentLength: content.length });
     await injectFounderMessage(businessId, content);
 
-    const ceoProcess = getAgentsByBusiness(businessId).find((p) => p.agentId === 'ceo');
+    const ceoProcess = getProcessesForBusiness(businessId).find((p) => p.agentId === 'ceo');
     if (ceoProcess) {
       ceoProcess.enqueuePrompt(`The founder sent you a message: "${content}". Read your swarm bus inbox and respond.`);
     }
@@ -163,6 +229,39 @@ app.post('/api/business/:id/message', async (req: Request, res: Response) => {
     logger.error('message_inject_error', { error: String((err as Error).message) });
     res.status(500).json({ error: String((err as Error).message) });
   }
+});
+
+/** GET /api/business/:id/status — Whether this business's agents are paused. */
+app.get('/api/business/:id/status', (req: Request, res: Response) => {
+  const businessId = req.params.id;
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  const processes = getProcessesForBusiness(businessId);
+  const paused = processes.length > 0 && processes.every((p) => p.isPaused());
+  res.json({ paused });
+});
+
+/** POST /api/business/:id/pause — Put the infinite loop on hold for all agents in this business. */
+app.post('/api/business/:id/pause', (req: Request, res: Response) => {
+  const businessId = req.params.id;
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  const processes = getProcessesForBusiness(businessId);
+  for (const p of processes) {
+    p.pause();
+  }
+  logger.info('business_pause', { businessId, agentCount: processes.length });
+  res.json({ ok: true, paused: true });
+});
+
+/** POST /api/business/:id/resume — Resume the loop for all agents in this business. */
+app.post('/api/business/:id/resume', (req: Request, res: Response) => {
+  const businessId = req.params.id;
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  const processes = getProcessesForBusiness(businessId);
+  for (const p of processes) {
+    p.resume();
+  }
+  logger.info('business_resume', { businessId, agentCount: processes.length });
+  res.json({ ok: true, paused: false });
 });
 
 /** POST /api/agents/spawn — Webhook from Swarm Bus. */
@@ -231,6 +330,11 @@ app.post('/api/agents/:key/wake', (req: Request, res: Response) => {
     process.wake();
     res.status(200).json({ ok: true, status: 'already_running_woke' });
     return;
+  }
+  if (key.endsWith('--ceo')) {
+    process.enqueuePrompt(
+      'You have new messages from your team. Check your swarm bus inbox (swarm_check_inbox), then respond briefly to each director with acknowledgment or next steps. Keep responses concise.',
+    );
   }
   process.wake();
   process.start().catch((err) => logger.error('wake_start_error', { key, error: String((err as Error).message) }));

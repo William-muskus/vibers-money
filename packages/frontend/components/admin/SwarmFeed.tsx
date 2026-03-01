@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { subscribeStream } from '@/lib/sse';
 
 const SWARM_BUS_URL = process.env.NEXT_PUBLIC_SWARM_BUS_URL || 'http://localhost:3100';
 
@@ -24,50 +25,65 @@ function formatEvent(ev: BusEvent): string {
   return JSON.stringify(ev);
 }
 
-export default function SwarmFeed() {
+function swarmFeedStreamUrl(): string {
+  if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_SWARM_BUS_URL) {
+    return '/api/swarm-bus/events';
+  }
+  return `${SWARM_BUS_URL}/api/events`;
+}
+
+function eventBelongsToBusiness(ev: BusEvent, businessId: string | undefined): boolean {
+  if (!businessId) return true;
+  if (ev.type === 'message' || ev.type === 'agent_registered') {
+    return ev.business_id === businessId;
+  }
+  if (ev.type === 'agent_deregistered') {
+    return ev.agent_id.startsWith(`${businessId}--`);
+  }
+  return true;
+}
+
+export default function SwarmFeed({ businessId }: { businessId?: string }) {
   const [events, setEvents] = useState<BusEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const maxEvents = 200;
 
-  useEffect(() => {
-    const url = `${SWARM_BUS_URL}/api/events`;
-    const es = new EventSource(url);
+  const filteredEvents = businessId
+    ? events.filter((ev) => eventBelongsToBusiness(ev, businessId))
+    : events;
 
-    es.onopen = () => setConnected(true);
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as BusEvent;
-        setEvents((prev) => [...prev.slice(-(maxEvents - 1)), data]);
-      } catch {
-        // ignore
-      }
-    };
-    es.onerror = () => setConnected(false);
-    return () => es.close();
+  useEffect(() => {
+    const unsubscribe = subscribeStream(swarmFeedStreamUrl(), (event) => {
+      if (event.type === 'info') setConnected(true);
+      else setEvents((prev) => [...prev.slice(-(maxEvents - 1)), event as BusEvent]);
+    }, { onDisconnect: () => setConnected(false), onConnectionFailed: () => setConnected(false) });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [events]);
+  }, [filteredEvents]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-      <h3 className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900 dark:border-gray-700 dark:text-white">
-        Swarm Bus Live Feed
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-white/5 bg-[#14151c]/80 backdrop-blur-xl">
+      <h3 className="border-b border-white/5 px-3 py-2.5 text-sm font-semibold text-white">
+        {businessId ? `Swarm Bus — ${businessId}` : 'Swarm Bus Live Feed'}
       </h3>
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-2 font-mono text-xs text-gray-700 dark:text-gray-300"
+        className="flex-1 overflow-y-auto p-2 font-mono text-xs text-white/80"
       >
-        {events.length === 0 && (
-          <p className="text-gray-500 dark:text-gray-400">{connected ? 'No events yet.' : 'Connecting to Swarm Bus…'}</p>
+        {filteredEvents.length === 0 && (
+          <p className="text-white/50">
+            {connected ? (businessId ? `No events yet for ${businessId}.` : 'No events yet.') : 'Connecting to Swarm Bus…'}
+          </p>
         )}
         {events.length > 0 && !connected && (
-          <p className="sticky top-0 z-10 bg-amber-100 py-0.5 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">Reconnecting…</p>
+          <p className="sticky top-0 z-10 bg-amber-500/20 py-1 text-amber-300">Reconnecting…</p>
         )}
-        {events.map((ev, i) => (
-          <div key={i} className="border-b border-gray-100 py-1 dark:border-gray-700">
+        {filteredEvents.map((ev, i) => (
+          <div key={i} className="border-b border-white/5 py-1.5 last:border-0">
             {formatEvent(ev)}
           </div>
         ))}

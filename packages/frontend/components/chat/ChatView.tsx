@@ -54,8 +54,18 @@ function QuestionCard({
   );
 }
 
-export default function ChatView({ businessId }: { businessId: string }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function ChatView({
+  businessId,
+  initialMessage,
+}: {
+  businessId: string;
+  initialMessage?: string;
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    initialMessage?.trim()
+      ? [{ kind: 'text', role: 'user', content: initialMessage.trim() }]
+      : []
+  );
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [waitingForReply, setWaitingForReply] = useState(false);
@@ -175,6 +185,20 @@ export default function ChatView({ businessId }: { businessId: string }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Show Thinking/typing indicator when opening a new conversation from landing page (initialMessage)
+  useEffect(() => {
+    if (!initialMessage?.trim()) return;
+    setWaitingForReply(true);
+    setShowTypingIndicator(false);
+    typingTimeoutRef.current = setTimeout(() => setShowTypingIndicator(true), 800);
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
+  }, [initialMessage]);
+
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -209,27 +233,26 @@ export default function ChatView({ businessId }: { businessId: string }) {
   }, [businessId, input, sending]);
 
   const hasMessages = messages.length > 0;
-  const hasDraft = input.trim().length > 0;
-  const showConversation = hasMessages || hasDraft;
+  const showEmptyState = !hasMessages && !connectionFailed;
 
   return (
     <div className="flex h-full flex-col bg-transparent">
       <div ref={threadRef} className="flex-1 overflow-y-auto">
-        {!showConversation && (
-          <div className="flex min-h-full flex-col items-center justify-center px-4 pb-32 pt-6">
-            <div className="mx-auto flex max-w-2xl flex-col items-center gap-8 text-center">
-              {connectionFailed ? (
-                <>
-                  <p className="animate-fade-in text-sm text-amber-600 dark:text-amber-400">
-                    Can&apos;t connect — business may not exist or services aren&apos;t running.
-                  </p>
-                  <Link href="/" className="text-sm font-medium text-indigo-600 underline dark:text-indigo-400">
-                    Go home and create a business
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <h2 className="animate-fade-in-up text-2xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-3xl">
+        <div className="mx-auto max-w-3xl px-4 pb-12 pt-10 align-bottom">
+          {connectionFailed ? (
+            <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
+              <p className="animate-fade-in text-sm text-amber-600 dark:text-amber-400">
+                Can&apos;t connect — business may not exist or services aren&apos;t running.
+              </p>
+              <Link href="/" className="text-sm font-medium text-indigo-600 underline dark:text-indigo-400">
+                Go home and create a business
+              </Link>
+            </div>
+          ) : (
+            <div className="contents">
+              {showEmptyState && (
+                <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center">
+                  <h2 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
                     What business we launching today?
                   </h2>
                   {!connected && (
@@ -237,56 +260,43 @@ export default function ChatView({ businessId }: { businessId: string }) {
                       Connecting to CEO...
                     </p>
                   )}
-                  <div className="w-full animate-fade-in-up opacity-0 delay-2" style={{ animationFillMode: 'forwards' }}>
-                    <Composer
-                      value={input}
-                      onChange={setInput}
-                      onSend={handleSend}
-                      disabled={sending}
-                      placeholder="I want to launch a dog meme newsletter and tiktok channel..."
-                      className="mx-auto"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {showConversation && (
-          <div className="mx-auto max-w-3xl px-4 pb-24 pt-6">
-            <div className="flex flex-col gap-6">
-              {messages.map((m, i) =>
-                m.kind === 'ask_user' ? (
-                  <div key={`ask-${i}`} className="animate-scale-in flex flex-col gap-2">
-                    {m.questions.map((q, qi) => (
-                      <QuestionCard key={qi} q={q} onAnswer={handleAnswer} />
-                    ))}
-                  </div>
-                ) : (
-                  <MessageBubble key={m.id ?? `msg-${i}`} role={m.role} content={m.content} />
-                ),
-              )}
-              {(sending || waitingForReply) && (
-                <div className="flex items-start gap-3 animate-fade-in">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 dark:bg-indigo-400/25 ring-2 ring-indigo-400/30 dark:ring-indigo-300/30">
-                    <span className="animate-soft-pulse text-sm font-medium text-indigo-600 dark:text-indigo-300">…</span>
-                  </div>
-                  <div className="rounded-2xl rounded-bl-md border border-indigo-200/80 bg-indigo-50/90 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-indigo-400/25 dark:bg-indigo-950/60">
-                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-200">
-                      {showTypingIndicator ? 'Typing...' : 'Thinking...'}
-                    </span>
-                  </div>
                 </div>
               )}
+              <div className="flex flex-col gap-6">
+                {messages.map((m, i) =>
+                  m.kind === 'ask_user' ? (
+                    <div key={`ask-${i}`} className="animate-scale-in flex flex-col gap-2">
+                      {m.questions.map((q, qi) => (
+                        <QuestionCard key={qi} q={q} onAnswer={handleAnswer} />
+                      ))}
+                    </div>
+                  ) : (
+                    <MessageBubble key={m.id ?? `msg-${i}`} role={m.role} content={m.content} />
+                  ),
+                )}
+                {(sending || waitingForReply) && (
+                  <div className="flex w-full justify-end">
+                    <div className="flex items-start gap-3 animate-fade-in">
+                      <div className="rounded-2xl rounded-br-md border border-indigo-200/80 bg-indigo-50/90 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-indigo-400/25 dark:bg-indigo-950/60">
+                        <span className="text-sm font-medium text-indigo-700 dark:text-indigo-200">
+                          {showTypingIndicator ? 'Typing...' : 'Thinking...'}
+                        </span>
+                      </div>
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 dark:bg-indigo-400/25 ring-2 ring-indigo-400/30 dark:ring-indigo-300/30">
+                        <span className="animate-soft-pulse text-sm font-medium text-indigo-600 dark:text-indigo-300">…</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div ref={bottomRef} />
             </div>
-            <div ref={bottomRef} />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {showConversation && (
-        <div className="shrink-0 border-t border-white/60 bg-white/70 px-4 py-4 backdrop-blur-md dark:border-white/5 dark:bg-[#14151c]/80">
+      {!connectionFailed && (
+        <div className="shrink-0 px-4 py-4 text-transparent">
           <div className="mx-auto max-w-3xl">
             <Composer
               value={input}

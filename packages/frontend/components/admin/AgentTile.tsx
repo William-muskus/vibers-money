@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { agentStreamUrl } from '@/lib/admin-api';
+import { subscribeStream, type StreamEvent } from '@/lib/sse';
 import ActivityLine from './ActivityLine';
 
 type ActivityMsg = Record<string, unknown>;
@@ -17,39 +18,27 @@ export default function AgentTile({
 }) {
   const [mode, setMode] = useState(initialMode);
   const [activities, setActivities] = useState<ActivityMsg[]>(initialActivities);
-  const [lastActivityTime, setLastActivityTime] = useState<number>(0);
+  const [lastActivityTime, setLastActivityTime] = useState<number>(() => Date.now());
+  const [connected, setConnected] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const THINKING_THRESHOLD_MS = 3000;
   const [showThinking, setShowThinking] = useState(false);
 
   useEffect(() => {
-    setLastActivityTime(Date.now());
-  }, []);
-
-  useEffect(() => {
-    const es = new EventSource(agentStreamUrl(agentKey));
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as { type: string; mode?: string; msg?: ActivityMsg; frame?: string };
-        switch (data.type) {
-          case 'activity':
-            setLastActivityTime(Date.now());
-            if (data.msg) setActivities((prev) => [...prev.slice(-199), data.msg!]);
-            break;
-          case 'mode_switch':
-            if (data.mode) setMode(data.mode as 'terminal' | 'browser');
-            break;
-          case 'screencast_frame':
-            setLastActivityTime(Date.now());
-            if (imgRef.current && data.frame) imgRef.current.src = `data:image/jpeg;base64,${data.frame}`;
-            break;
-        }
-      } catch {
-        // ignore
+    const unsubscribe = subscribeStream(agentStreamUrl(agentKey), (event: StreamEvent) => {
+      if (event.type === 'info') setConnected(true);
+      if (event.type === 'activity') {
+        setLastActivityTime(Date.now());
+        if (event.msg) setActivities((prev) => [...prev.slice(-199), event.msg!]);
       }
-    };
-    return () => es.close();
+      if (event.type === 'mode_switch' && event.mode) setMode(event.mode as 'terminal' | 'browser');
+      if (event.type === 'screencast_frame') {
+        setLastActivityTime(Date.now());
+        if (imgRef.current && event.frame) imgRef.current.src = `data:image/jpeg;base64,${event.frame}`;
+      }
+    }, { onConnectionFailed: () => setConnected(false), onDisconnect: () => setConnected(false) });
+    return unsubscribe;
   }, [agentKey]);
 
   useEffect(() => {
@@ -67,33 +56,50 @@ export default function AgentTile({
   const roleName = agentKey.includes('--') ? agentKey.split('--')[1] : agentKey;
 
   return (
-    <div className="flex flex-col rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800">
-      <div className="flex items-center justify-between border-b border-gray-200 px-2 py-1 dark:border-gray-700">
-        <span className="truncate text-sm font-medium text-gray-900 dark:text-white">{roleName}</span>
+    <div className="flex h-full max-h-[280px] min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#14151c]/95 shadow-xl shadow-black/20 backdrop-blur-xl ring-1 ring-white/5">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2.5">
+        <span className="truncate text-sm font-semibold tracking-tight text-white">{roleName}</span>
         <span
-          className={`rounded px-1.5 py-0.5 text-xs ${
-            mode === 'browser' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+          className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium uppercase tracking-wider ${
+            mode === 'browser'
+              ? 'bg-amber-500/25 text-amber-300 ring-1 ring-amber-400/30'
+              : 'bg-white/15 text-white/90 ring-1 ring-white/10'
           }`}
         >
           {mode}
         </span>
       </div>
-      <div className="relative flex min-h-[120px] flex-1 flex-col overflow-hidden">
-        {showThinking && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900/70 dark:bg-gray-950/70">
-            <span className="animate-pulse text-sm font-medium text-white">Thinking…</span>
+      <div className="relative flex min-h-[80px] min-w-0 flex-1 flex-col overflow-hidden">
+        {!connected && activities.length === 0 && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0c0c12]/95">
+            <span className="text-sm text-white/50">Stream unavailable</span>
+          </div>
+        )}
+        {!connected && activities.length > 0 && (
+          <div className="sticky top-0 z-10 bg-amber-500/20 py-1.5 text-center text-xs font-medium text-amber-300">
+            Reconnecting…
+          </div>
+        )}
+        {showThinking && connected && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-linear-to-b from-[#0c0c12]/95 to-[#14151c]/95">
+            <span className="flex gap-1">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/80 [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/80 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/80 [animation-delay:300ms]" />
+            </span>
+            <span className="text-sm font-medium text-white/90">Thinking…</span>
           </div>
         )}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-2 text-left"
-          style={{ display: mode === 'terminal' ? 'block' : 'none' }}
+          className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-2.5 text-left"
+          style={{ display: mode === 'terminal' ? 'flex' : 'none' }}
         >
           {activities.map((msg, i) => (
             <ActivityLine key={i} msg={msg} />
           ))}
         </div>
-        <div className="flex-1 bg-gray-900" style={{ display: mode === 'browser' ? 'block' : 'none' }}>
+        <div className="flex-1 bg-[#0c0c12]" style={{ display: mode === 'browser' ? 'block' : 'none' }}>
           <img ref={imgRef} alt="Live browser" className="h-full w-full object-contain" />
         </div>
       </div>

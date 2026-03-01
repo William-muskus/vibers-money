@@ -80,6 +80,12 @@ export class AgentProcess {
   /** Resolves to wake the agent from idle sleep. */
   private wakeResolve: (() => void) | null = null;
 
+  /** When true, the loop does not start a new cycle until resume() is called. */
+  private paused = false;
+
+  /** Resolves when resume() is called so the loop can continue. */
+  private resumeResolve: (() => void) | null = null;
+
   /** True when the agent last used ask_user_question and is waiting for an answer. */
   private waitingForUserAnswer = false;
 
@@ -213,11 +219,39 @@ export class AgentProcess {
     }
   }
 
+  /** Put the infinite loop on hold; no new cycle until resume(). */
+  pause(): void {
+    this.paused = true;
+    this.wake();
+    logger.info('agent_pause', { key: this.key });
+  }
+
+  /** Resume the loop after pause(). */
+  resume(): void {
+    this.paused = false;
+    if (this.resumeResolve) {
+      this.resumeResolve();
+      this.resumeResolve = null;
+    }
+    logger.info('agent_resume', { key: this.key });
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   async start(): Promise<void> {
     this.running = true;
     const { workdir, vibeHome, apiKey, maxTurns = 100, maxPrice = '1.00' } = this.config;
 
     while (this.running) {
+      // When paused, wait until resume() is called (keeps the loop on hold without killing the process).
+      if (this.paused) {
+        await new Promise<void>((resolve) => { this.resumeResolve = resolve; });
+        this.resumeResolve = null;
+        continue;
+      }
+
       // --- Determine prompt for this cycle ---
       let prompt: string;
 
@@ -239,15 +273,19 @@ export class AgentProcess {
         ]);
         this.wakeResolve = null;
         if (!this.running) break;
+        if (this.paused) continue;
 
         if (this.pendingPrompts.length > 0) {
           prompt = this.pendingPrompts.shift()!;
         } else if (this.waitingForUserAnswer) {
           // Still waiting for the founder — don't pester, keep idling
           continue;
+        } else if (this.agentId === 'ceo') {
+          prompt =
+            'Check your swarm bus inbox (swarm_check_inbox) and respond to your team. Keep responses concise. Synthesize updates and give brief next steps or acknowledgments.';
         } else {
           prompt =
-            'Check your messages and todos. Work through your full todo list (take down all pending tasks); update and create new tasks as needed; then report back to your manager. If you have no pending todos, create new tasks from your objectives and context, then report back.';
+            'Check your messages and todos. If you have new instructions from the CEO, follow them. Otherwise: work from your objectives — create new tasks with todo_add from your macro objectives, execute work with todo_complete, use your tools. Only report to the CEO when you have new progress or completed a milestone; do not send the same status update repeatedly.';
         }
       }
 

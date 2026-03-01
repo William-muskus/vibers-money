@@ -6,6 +6,7 @@ import WalletBalance from '@/components/finance/WalletBalance';
 import BudgetBars from '@/components/finance/BudgetBars';
 import TransactionFeed from '@/components/finance/TransactionFeed';
 import PLSummary from '@/components/finance/PLSummary';
+import { canAccessBusiness, canAccessBusinessAsync } from '@/lib/local-businesses';
 
 type Budget = { role: string; allocated: number; spent: number };
 type Tx = { id: string; amount: number; description: string; timestamp: string };
@@ -16,6 +17,25 @@ export default function FinancePageClient({ businessId }: { businessId: string }
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!businessId) {
+      setAllowed(false);
+      return;
+    }
+    if (canAccessBusiness(businessId)) {
+      setAllowed(true);
+      return;
+    }
+    let cancelled = false;
+    canAccessBusinessAsync(businessId).then((ok) => {
+      if (!cancelled) setAllowed(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -36,6 +56,23 @@ export default function FinancePageClient({ businessId }: { businessId: string }
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
         <p className="text-gray-600 dark:text-gray-400">Missing business ID.</p>
         <Link href="/" className="text-blue-600 underline">Go home</Link>
+      </div>
+    );
+  }
+
+  if (allowed === false) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+        <p className="text-gray-600 dark:text-gray-400">You don’t have access to this business.</p>
+        <Link href="/" className="text-blue-600 underline">Go home</Link>
+      </div>
+    );
+  }
+
+  if (allowed === null) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+        <p className="text-gray-500 dark:text-gray-500">Checking access…</p>
       </div>
     );
   }

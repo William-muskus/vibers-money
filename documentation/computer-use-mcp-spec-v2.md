@@ -13,6 +13,18 @@ The **Computer Use MCP server** extends every Vibe workspace with browser capabi
 3. **Agent spawning** — how the CEO agent creates new agent workspaces as Vibe processes, each with their own workdir, config, MCP connections, and persistent session
 4. **The full architecture** — no VMs, no containers, no Firecracker. Just Vibe processes on a Linux server with shared MCP infrastructure.
 
+### Using computer use on your own machine
+
+Computer use drives **one Chrome instance** via the Chrome DevTools Protocol (CDP). That Chrome can run on the same machine as the orchestrator (e.g. your dev PC) or on another host.
+
+- **Same machine (typical):** Run Chrome with remote debugging on your PC, then run the computer-use-mcp server and orchestrator on the same PC. Agents will control that browser. Example:
+  - Windows: `chrome.exe --remote-debugging-port=9222`
+  - macOS/Linux: `google-chrome --remote-debugging-port=9222` (or your Chromium path)
+  - Start the computer-use-mcp server (default: connects to `localhost:9222`). Agents then drive this Chrome.
+- **Chrome on another machine:** If Chrome runs on a different host (e.g. your laptop at `192.168.1.10`), set `CDP_HOST=192.168.1.10` (and optionally `CDP_PORT=9222`) in the environment where the computer-use-mcp server runs. The server will connect to that Chrome. Ensure the debugging port is reachable (firewall, no `--remote-debugging-address=127.0.0.1` so it listens on all interfaces if needed).
+
+Note: computer use is **browser-only** (navigate, click, type in Chrome). It does not control your full desktop (mouse/keyboard outside the browser).
+
 ### Why No VMs
 
 Vibe already provides:

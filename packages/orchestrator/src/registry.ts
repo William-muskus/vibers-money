@@ -4,6 +4,7 @@
  */
 import type { AgentProcess } from './agent-process.js';
 import { logger } from './logger.js';
+import { clearForTesting as clearOwnershipForTesting } from './ownership.js';
 
 const byKey = new Map<string, AgentProcess>();
 const byBusiness = new Map<string, AgentProcess[]>();
@@ -45,4 +46,5 @@ export function getBusinessIds(): string[] {
 export function clearForTesting(): void {
   byKey.clear();
   byBusiness.clear();
+  clearOwnershipForTesting();
 }

@@ -2,16 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { getAdminStats, getAdminAgents, adminStreamUrl } from '@/lib/admin-api';
+import { subscribeStream, type StreamEvent } from '@/lib/sse';
 import AgentTile from './AgentTile';
 
-export default function MosaicGrid() {
-  const [agentKeys, setAgentKeys] = useState<string[]>([]);
-  const [stats, setStats] = useState({
-    businessCount: 0,
-    agentCount: 0,
-    tweetsCount: 0,
-    walletBalance: 0,
-  });
+const prefix = (businessId: string) => `${businessId}--`;
+
+function filterByBusiness(keys: string[], businessId: string | undefined): string[] {
+  if (!businessId) return keys;
+  const pre = prefix(businessId);
+  return keys.filter((k) => k.startsWith(pre));
+}
+
+export default function MosaicGrid({ businessId }: { businessId?: string }) {
+  const [allAgentKeys, setAllAgentKeys] = useState<string[]>([]);
+  const [stats, setStats] = useState({ businessCount: 0, agentCount: 0 });
+
+  const agentKeys = filterByBusiness(allAgentKeys, businessId);
 
   useEffect(() => {
     let mounted = true;
@@ -19,12 +25,10 @@ export default function MosaicGrid() {
       try {
         const [agentsData, statsData] = await Promise.all([getAdminAgents(), getAdminStats()]);
         if (!mounted) return;
-        setAgentKeys(agentsData.agents || []);
+        setAllAgentKeys(agentsData.agents || []);
         setStats({
           businessCount: statsData.businessCount ?? 0,
           agentCount: statsData.agentCount ?? 0,
-          tweetsCount: (statsData as { tweetsCount?: number }).tweetsCount ?? 0,
-          walletBalance: (statsData as { walletBalance?: number }).walletBalance ?? 0,
         });
       } catch {
         // ignore
@@ -39,49 +43,57 @@ export default function MosaicGrid() {
   }, []);
 
   useEffect(() => {
-    const es = new EventSource(adminStreamUrl());
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as { agent?: string };
-        if (data.agent) {
-          setAgentKeys((prev) => (prev.includes(data.agent!) ? prev : [...prev, data.agent!]));
-        }
-      } catch {
-        // ignore
+    const unsubscribe = subscribeStream(adminStreamUrl(), (event: StreamEvent) => {
+      if (event.agent) {
+        if (businessId && !event.agent.startsWith(prefix(businessId))) return;
+        setAllAgentKeys((prev) => (prev.includes(event.agent!) ? prev : [...prev, event.agent!]));
       }
-    };
-    return () => es.close();
-  }, []);
+    });
+    return unsubscribe;
+  }, [businessId]);
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="sticky top-0 z-10 flex flex-wrap gap-6 rounded-lg bg-gray-100 px-4 py-3 dark:bg-gray-800">
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">
-          Businesses: {stats.businessCount}
-        </span>
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">
-          Agents: {stats.agentCount}
-        </span>
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">
-          Tweets: {stats.tweetsCount}
-        </span>
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">
-          Wallet: ${stats.walletBalance.toFixed(2)}
-        </span>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="z-10 flex shrink-0 flex-wrap gap-6 rounded-xl border border-white/5 bg-[#14151c]/80 px-4 py-3 backdrop-blur-xl">
+        {businessId ? (
+          <>
+            <span className="text-xl font-semibold tracking-tight text-white">
+              Business: {businessId}
+            </span>
+            <span className="text-xl font-semibold tracking-tight text-white">
+              Agents: {agentKeys.length}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-xl font-semibold tracking-tight text-white">
+              Businesses: {stats.businessCount}
+            </span>
+            <span className="text-xl font-semibold tracking-tight text-white">
+              Agents: {stats.agentCount}
+            </span>
+          </>
+        )}
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {agentKeys.map((key) => (
-          <AgentTile
-            key={key}
-            agentKey={key}
-            initialMode="terminal"
-            initialActivities={[]}
-          />
-        ))}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {agentKeys.length === 0 ? (
+          <p className="py-6 text-center text-sm text-white/50">
+            {businessId ? `No agents yet for ${businessId}.` : 'No agents yet. Create a business from the home page.'}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 pb-2">
+            {agentKeys.map((key) => (
+              <div key={key} className="min-h-0 max-h-[280px] shrink-0">
+                <AgentTile
+                  agentKey={key}
+                  initialMode="terminal"
+                  initialActivities={[]}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {agentKeys.length === 0 && (
-        <p className="text-center text-sm text-gray-500">No agents yet. Create a business from the home page.</p>
-      )}
     </div>
   );
 }
