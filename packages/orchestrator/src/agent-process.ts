@@ -276,6 +276,7 @@ export class AgentProcess {
 
       args.push('--prompt', prompt);
 
+      const { bedrockGatewayApiKey } = this.config;
       const env = {
         ...process.env,
         VIBE_HOME: vibeHome,
@@ -283,6 +284,7 @@ export class AgentProcess {
         TERM: 'dumb',       // Disable rich terminal UI so we get NDJSON not ANSI
         NO_COLOR: '1',
         ...(apiKey && { MISTRAL_API_KEY: apiKey }),
+        ...(bedrockGatewayApiKey && { BEDROCK_GATEWAY_API_KEY: bedrockGatewayApiKey }),
       };
 
       let vibeCmd: string;
@@ -291,10 +293,18 @@ export class AgentProcess {
       if (process.env.VIBE_USE_PYTHON_MODULE === '1' || process.env.VIBE_USE_PYTHON_MODULE === 'true') {
         // Run via Python module instead of vibe.exe. On Windows, vibe.exe may attach a console
         // and emit Textual/ANSI output; py -m avoids that and yields NDJSON to pipes.
-        vibeCmd = process.platform === 'win32' ? 'py' : 'python3';
-        const pyVer = process.env.VIBE_PYTHON_VERSION ?? '-3';
-        vibeArgs = [pyVer, '-m', 'vibe.cli.entrypoint', ...vibeArgs];
-        logger.info('vibe_spawn_python_module', { key: this.key, pyVer });
+        // VIBE_PYTHON overrides the executable when "py" is not in PATH (e.g. Node spawn on Windows).
+        const explicitPython = process.env.VIBE_PYTHON?.trim();
+        if (explicitPython) {
+          vibeCmd = explicitPython;
+          vibeArgs = ['-m', 'vibe.cli.entrypoint', ...vibeArgs];
+          logger.info('vibe_spawn_python_module', { key: this.key, cmd: vibeCmd });
+        } else {
+          vibeCmd = process.platform === 'win32' ? 'py' : 'python3';
+          const pyVer = process.env.VIBE_PYTHON_VERSION ?? '-3';
+          vibeArgs = [pyVer, '-m', 'vibe.cli.entrypoint', ...vibeArgs];
+          logger.info('vibe_spawn_python_module', { key: this.key, pyVer });
+        }
       } else {
         vibeCmd = process.env.VIBE_CLI ?? '';
         if (!vibeCmd && process.platform === 'win32') {

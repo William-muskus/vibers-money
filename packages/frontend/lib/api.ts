@@ -1,4 +1,5 @@
 import { getOrCreateFounderSessionId } from './session-id';
+import { acquire, fetchWithRateLimitAndRetry } from './rate-limit';
 
 // Use same-origin proxy to avoid CORS (EventSource blocks cross-origin in some browsers)
 const ORCHESTRATOR_API = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL
@@ -10,6 +11,46 @@ export function normalizeBusinessId(id: string): string {
   return id.replace(/^-+|-+$/g, '').replace(/-+/g, '-');
 }
 
+const MAX_SLUG_LENGTH = 36;
+
+/**
+ * Derive a short, readable business slug from the founder's message.
+ * Prefer extracting a product/company name (e.g. "Let's launch vibers" → "vibers").
+ * Otherwise truncate the slugified message so we don't get 100-char IDs.
+ */
+export function deriveBusinessSlug(text: string): string {
+  const t = text.trim();
+  if (!t) return `business-${Date.now()}`;
+
+  const lower = t.toLowerCase();
+
+  // Try to extract a product/company name from common phrases
+  const extractPatterns = [
+    /\b(?:launch|launching)\s+([a-z0-9][a-z0-9-]{1,24})(?:\s|$|,|!|\.)/i,
+    /\b(?:build|building)\s+([a-z0-9][a-z0-9-]{1,24})(?:\s|$|,|!|\.)/i,
+    /\b(?:start|starting)\s+([a-z0-9][a-z0-9-]{1,24})(?:\s|$|,|!|\.)/i,
+    /\b(?:called|name is|we're|we are)\s+([a-z0-9][a-z0-9-]{1,24})(?:\s|$|,|!|\.)/i,
+    /\b(?:focus on|about)\s+([a-z0-9][a-z0-9-]{1,24})(?:\s|$|,|!|\.)/i,
+    /"(?:launch\s+)?([a-z0-9][a-z0-9-]{1,24})"/i,
+  ];
+
+  for (const re of extractPatterns) {
+    const m = lower.match(re);
+    if (m?.[1]) {
+      const candidate = m[1].replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      if (candidate.length >= 2) {
+        const slug = normalizeBusinessId(candidate).slice(0, MAX_SLUG_LENGTH);
+        if (slug) return slug;
+      }
+    }
+  }
+
+  // Fallback: slugify full text and truncate
+  const fullSlug = lower.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+  const truncated = normalizeBusinessId(fullSlug).slice(0, MAX_SLUG_LENGTH);
+  return truncated || `business-${Date.now()}`;
+}
+
 function founderHeaders(): Record<string, string> {
   const id = getOrCreateFounderSessionId();
   return id ? { 'X-Founder-Session-Id': id } : {};
@@ -19,32 +60,30 @@ const CREATE_BUSINESS_TIMEOUT_MS = 90_000;
 const SEND_MESSAGE_TIMEOUT_MS = 25_000;
 
 export async function createBusiness(name: string, founderPrompt?: string): Promise<{ businessId: string; agentKey: string }> {
-  const slug = name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  const businessId = normalizeBusinessId(slug || `business-${Date.now()}`);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CREATE_BUSINESS_TIMEOUT_MS);
+  const businessId = normalizeBusinessId(deriveBusinessSlug(name));
   try {
-    const res = await fetch(`${ORCHESTRATOR_API}/business/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...founderHeaders() },
-      body: JSON.stringify({
-        business_id: businessId,
-        name,
-        founder_prompt: founderPrompt || name,
-        founder_session_id: getOrCreateFounderSessionId(),
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    const res = await fetchWithRateLimitAndRetry(
+      `${ORCHESTRATOR_API}/business/create`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...founderHeaders() },
+        body: JSON.stringify({
+          business_id: businessId,
+          name,
+          founder_prompt: founderPrompt || name,
+          founder_session_id: getOrCreateFounderSessionId(),
+        }),
+      },
+      { timeoutMs: CREATE_BUSINESS_TIMEOUT_MS },
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error((err as { error?: string }).error || 'Failed to create business');
     }
     return res.json();
   } catch (e) {
-    clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {
-      throw new Error('Request timed out. Creating a business can take a minute — try again or check that the orchestrator and Swarm Bus are running.');
+      throw new Error('Request timed out after retries. Creating a business can take a minute — check that the orchestrator and Swarm Bus are running.');
     }
     throw e;
   }
@@ -52,24 +91,23 @@ export async function createBusiness(name: string, founderPrompt?: string): Prom
 
 export async function sendMessage(businessId: string, content: string): Promise<void> {
   const id = normalizeBusinessId(businessId);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SEND_MESSAGE_TIMEOUT_MS);
   try {
-    const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...founderHeaders() },
-      body: JSON.stringify({ content }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    const res = await fetchWithRateLimitAndRetry(
+      `${ORCHESTRATOR_API}/business/${id}/message`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...founderHeaders() },
+        body: JSON.stringify({ content }),
+      },
+      { timeoutMs: SEND_MESSAGE_TIMEOUT_MS },
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error((err as { error?: string }).error || 'Failed to send message');
     }
   } catch (e) {
-    clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {
-      throw new Error('Request timed out. The service may be busy — try again in a moment.');
+      throw new Error('Request timed out after retries. The service may be busy — try again in a moment.');
     }
     throw e;
   }
@@ -91,6 +129,7 @@ export function ceoStreamUrl(businessId: string): string {
 }
 
 export async function getBusinessStatus(businessId: string): Promise<{ paused: boolean }> {
+  await acquire();
   const id = normalizeBusinessId(businessId);
   const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/status`, { headers: founderHeaders() });
   if (!res.ok) return { paused: false };
@@ -98,12 +137,14 @@ export async function getBusinessStatus(businessId: string): Promise<{ paused: b
 }
 
 export async function pauseBusiness(businessId: string): Promise<void> {
+  await acquire();
   const id = normalizeBusinessId(businessId);
   const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/pause`, { method: 'POST', headers: founderHeaders() });
   if (!res.ok) throw new Error('Failed to pause');
 }
 
 export async function resumeBusiness(businessId: string): Promise<void> {
+  await acquire();
   const id = normalizeBusinessId(businessId);
   const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/resume`, { method: 'POST', headers: founderHeaders() });
   if (!res.ok) throw new Error('Failed to resume');
@@ -112,6 +153,7 @@ export async function resumeBusiness(businessId: string): Promise<void> {
 export type TreeEntry = { name: string; kind: 'dir' | 'file'; children?: TreeEntry[] };
 
 export async function getBusinessTree(businessId: string): Promise<TreeEntry[]> {
+  await acquire();
   const id = normalizeBusinessId(businessId);
   const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/tree`, { headers: founderHeaders() });
   if (!res.ok) {
@@ -127,6 +169,7 @@ const CAN_ACCESS_TIMEOUT_MS = 8000;
 export async function canAccessBusinessFromBackend(businessId: string): Promise<boolean> {
   const sessionId = getOrCreateFounderSessionId();
   if (!sessionId) return false;
+  await acquire();
   const q = new URLSearchParams({ session_id: sessionId });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CAN_ACCESS_TIMEOUT_MS);
@@ -144,6 +187,35 @@ export async function canAccessBusinessFromBackend(businessId: string): Promise<
     clearTimeout(timeoutId);
     return false;
   }
+}
+
+/** Stripe Connect: get whether this business has payouts set up (their own Stripe Express account). */
+export async function getStripeConnectStatus(businessId: string): Promise<{
+  hasAccount: boolean;
+  chargesEnabled: boolean;
+  detailsSubmitted: boolean;
+}> {
+  const id = normalizeBusinessId(businessId);
+  const res = await fetch(`/api/stripe/connect/status?business_id=${encodeURIComponent(id)}`);
+  if (!res.ok) return { hasAccount: false, chargesEnabled: false, detailsSubmitted: false };
+  return res.json();
+}
+
+/** Stripe Connect: start onboarding (add bank/IBAN to receive payments). Returns URL to redirect user to Stripe. */
+export async function startStripeConnectOnboarding(businessId: string): Promise<{ url: string }> {
+  const id = normalizeBusinessId(businessId);
+  const res = await fetch('/api/stripe/connect/onboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ business_id: id }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error || 'Failed to start payout setup');
+  }
+  const data = (await res.json()) as { url?: string };
+  if (!data.url) throw new Error('No onboarding URL returned');
+  return { url: data.url };
 }
 
 /** Create Stripe checkout session for funding a business; redirect to returned url. */

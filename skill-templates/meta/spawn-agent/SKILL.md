@@ -20,9 +20,9 @@ Call the MCP tool **`mcp_swarm_spawn_agent`** with:
 - **skills** (optional): Skill names to seed (from shared or meta).
 - **lifecycle** (optional): `infinite_loop` (default) or `task_based`.
 
-The Orchestrator creates the workspace, **writes AGENTS.md and config.toml** from the mission and role, copies skills, and starts the agent. You do not write AGENTS.md yourself. After spawn, send a short welcome or brief via `mcp_swarm_send_message` if needed.
+The Orchestrator creates the workspace, **writes AGENTS.md and config.toml** from the mission and role, copies skills, and starts the agent. You do not write AGENTS.md yourself. You can only send messages to an agent after they are spawned and running — spawn all five directors first, then use `mcp_swarm_send_message` for welcome or briefs if needed.
 
 ## Convention (same tool for CEO and directors)
-- **CEO**: Spawn Security Director first, then CTO, then department managers (Marketing, Product, Finance). Pass mission + **macro_objectives** so they self-configure and create their initial task list. Then spawn specialists as needed.
+- **CEO**: Spawn all five directors in order: Security Director first, then CTO, then Marketing, Product, and Finance Directors. Pass mission + **macro_objectives** so they self-configure and create their initial task list. Only after they are running can you message them. Then spawn specialists as needed.
 - **Department managers**: Spawn your specialists (e.g. Community Manager, Copywriter) with a clear mission and **macro_objectives** (required) for their first-cycle task list.
 - One skill, one tool; who spawns whom is convention, not a different API.

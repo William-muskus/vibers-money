@@ -33,7 +33,7 @@ export function createMessagingTools() {
     },
 
     swarm_send_message: {
-      description: 'Send a message to another agent by role name. You can only message your parent (upward) or your direct reports (downward).',
+      description: 'Send a message to another agent by role name. You can only message your parent (upward) or your direct reports (downward). The target agent must already be spawned and running; if you get "hierarchy or not found", spawn that role first (e.g. via swarm_spawn_agent) before messaging.',
       inputSchema: {
         to: z.string().describe("Role name of the target agent (e.g. 'ceo', 'community-manager')"),
         content: z.string().describe('Message content'),

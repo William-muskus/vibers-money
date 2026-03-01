@@ -29,3 +29,6 @@ npm-debug.log*
 
 # Vibe / Mistral
 .vibe/
+
+# Stripe Connect per-business account IDs (sensitive)
+data/

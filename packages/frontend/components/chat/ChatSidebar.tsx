@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { getMyBusinessIds, syncWithServerAndRemoveDeleted } from '@/lib/local-businesses';
@@ -10,11 +10,28 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
   const [businessIds, setBusinessIds] = useState<string[]>([]);
   const [open, setOpen] = useState(true);
 
-  useEffect(() => {
+  const refreshList = useCallback(() => {
     syncWithServerAndRemoveDeleted().then(() => {
       setBusinessIds(getMyBusinessIds());
     });
   }, []);
+
+  useEffect(() => {
+    refreshList();
+  }, [refreshList]);
+
+  // Re-sync when user returns to the tab (e.g. after deleting a business folder on server)
+  useEffect(() => {
+    const onFocus = () => refreshList();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshList]);
+
+  // Periodic re-sync so deleted server folders disappear without switching tabs
+  useEffect(() => {
+    const interval = setInterval(refreshList, 30_000);
+    return () => clearInterval(interval);
+  }, [refreshList]);
 
   return (
     <>
@@ -27,9 +44,20 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
         <aside className="flex h-full min-w-64 flex-col">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex flex-1 flex-col overflow-y-auto border-t border-gray-200/80 px-2 py-3 dark:border-white/5">
-              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                Businesses
-              </p>
+              <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                <p className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  Businesses
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-black/5 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white"
+                  aria-label="Retract sidebar"
+                >
+                  <span className="sr-only">Retract</span>
+                  ←
+                </button>
+              </div>
               <ul className="space-y-0.5">
                 <li className="animate-fade-in-up opacity-0" style={{ animationDelay: '0s', animationFillMode: 'forwards' }}>
                   <Link
@@ -79,15 +107,6 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
               </Link>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="absolute right-2 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-black/5 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="Retract sidebar"
-          >
-            <span className="sr-only">Retract</span>
-            ←
-          </button>
         </aside>
         {!open && (
           <button

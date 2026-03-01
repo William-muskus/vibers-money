@@ -90,9 +90,12 @@ export async function syncWithServerAndRemoveDeleted(): Promise<void> {
     const { businessIds: validIds } = await getAdminBusinesses();
     const validSet = new Set(validIds ?? []);
     const cached = read();
-    for (const id of cached) {
-      if (!validSet.has(id)) {
-        removeMyBusinessId(id);
+    const kept = cached.filter((id) => validSet.has(id));
+    const removed = cached.filter((id) => !validSet.has(id));
+    if (kept.length !== cached.length) {
+      write(kept);
+      await setMyBusinessIdsInIdb(kept);
+      for (const id of removed) {
         deleteCeoChatMessagesFromIdb(id).catch(() => {});
       }
     }

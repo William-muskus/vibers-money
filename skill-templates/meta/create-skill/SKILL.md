@@ -19,6 +19,7 @@ description: Create a new skill in .vibe/skills/<name>/SKILL.md when you need a 
 
 3. Write in clear Markdown. Reference tools by their MCP names (e.g. `mcp_swarm_send_message`, `mcp_computer_click`).
 4. Keep the skill focused on one workflow. Split into multiple skills if needed.
+5. **Update AGENTS.md**: Add the new skill's name to the **My skills (self-maintained)** section in `AGENTS.md`. Use `read_file` to read AGENTS.md, then `search_replace` (or `write_file`) to append the skill name to the list (e.g. add a line like `- my-skill-name` under that section).
 
 ## Example structure
 ```markdown

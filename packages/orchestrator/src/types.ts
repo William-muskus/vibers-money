@@ -4,6 +4,8 @@
 
 export interface AgentConfig {
   apiKey?: string;
+  /** When using USE_AWS_BEDROCK: API key for the Bedrock gateway (injected as BEDROCK_GATEWAY_API_KEY). */
+  bedrockGatewayApiKey?: string;
   workdir: string;
   vibeHome: string;
   maxTurns?: number;

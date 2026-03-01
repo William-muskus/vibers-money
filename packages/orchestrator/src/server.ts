@@ -224,7 +224,7 @@ app.post('/api/business/:id/message', async (req: Request, res: Response) => {
 
     const ceoProcess = getProcessesForBusiness(businessId).find((p) => p.agentId === 'ceo');
     if (ceoProcess) {
-      ceoProcess.enqueuePrompt(`The founder sent you a message: "${content}". Read your swarm bus inbox and respond.`);
+      ceoProcess.enqueuePrompt(`The founder sent you a message: "${content}". Reply to the founder in your next response — they see your reply in the chat. Then check your swarm bus inbox if needed.`);
     }
 
     res.status(200).json({ ok: true });
