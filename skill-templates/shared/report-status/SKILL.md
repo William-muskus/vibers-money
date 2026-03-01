@@ -1,3 +1,8 @@
+---
+name: report-status
+description: Report progress to your manager via Swarm Bus. Use after completing work or at end of cycle. Call mcp_swarm_send_message to your parent role.
+---
+
 # Report Status (shared skill)
 
 ## When to use

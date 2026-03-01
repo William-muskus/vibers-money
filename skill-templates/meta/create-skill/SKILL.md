@@ -1,3 +1,8 @@
+---
+name: create-skill
+description: Create a new skill in .vibe/skills/<name>/SKILL.md when you need a repeatable workflow not covered by existing skills. Use write_file and standard skill format.
+---
+
 # Create Skill (meta-skill)
 
 ## When to use

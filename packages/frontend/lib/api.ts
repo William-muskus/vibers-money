@@ -15,36 +15,63 @@ function founderHeaders(): Record<string, string> {
   return id ? { 'X-Founder-Session-Id': id } : {};
 }
 
+const CREATE_BUSINESS_TIMEOUT_MS = 90_000;
+const SEND_MESSAGE_TIMEOUT_MS = 25_000;
+
 export async function createBusiness(name: string, founderPrompt?: string): Promise<{ businessId: string; agentKey: string }> {
   const slug = name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const businessId = normalizeBusinessId(slug || `business-${Date.now()}`);
-  const res = await fetch(`${ORCHESTRATOR_API}/business/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...founderHeaders() },
-    body: JSON.stringify({
-      business_id: businessId,
-      name,
-      founder_prompt: founderPrompt || name,
-      founder_session_id: getOrCreateFounderSessionId(),
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || 'Failed to create business');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CREATE_BUSINESS_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${ORCHESTRATOR_API}/business/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...founderHeaders() },
+      body: JSON.stringify({
+        business_id: businessId,
+        name,
+        founder_prompt: founderPrompt || name,
+        founder_session_id: getOrCreateFounderSessionId(),
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string }).error || 'Failed to create business');
+    }
+    return res.json();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as Error).name === 'AbortError') {
+      throw new Error('Request timed out. Creating a business can take a minute — try again or check that the orchestrator and Swarm Bus are running.');
+    }
+    throw e;
   }
-  return res.json();
 }
 
 export async function sendMessage(businessId: string, content: string): Promise<void> {
   const id = normalizeBusinessId(businessId);
-  const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/message`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...founderHeaders() },
-    body: JSON.stringify({ content }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || 'Failed to send message');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SEND_MESSAGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...founderHeaders() },
+      body: JSON.stringify({ content }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string }).error || 'Failed to send message');
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as Error).name === 'AbortError') {
+      throw new Error('Request timed out. The service may be busy — try again in a moment.');
+    }
+    throw e;
   }
 }
 
@@ -80,6 +107,19 @@ export async function resumeBusiness(businessId: string): Promise<void> {
   const id = normalizeBusinessId(businessId);
   const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/resume`, { method: 'POST', headers: founderHeaders() });
   if (!res.ok) throw new Error('Failed to resume');
+}
+
+export type TreeEntry = { name: string; kind: 'dir' | 'file'; children?: TreeEntry[] };
+
+export async function getBusinessTree(businessId: string): Promise<TreeEntry[]> {
+  const id = normalizeBusinessId(businessId);
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${id}/tree`, { headers: founderHeaders() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error || 'Failed to load tree');
+  }
+  const data = (await res.json()) as { tree?: TreeEntry[] };
+  return data.tree ?? [];
 }
 
 const CAN_ACCESS_TIMEOUT_MS = 8000;

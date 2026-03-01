@@ -71,6 +71,47 @@ export default function ActivityLine({ msg }: { msg: ActivityMsg }) {
         </div>
       );
     }
+    // Swarm / skill-related tools — show intent clearly
+    if (name === 'mcp_swarm_spawn_agent' || name === 'swarm_spawn_agent') {
+      const role = (args.role ?? args.agent_role ?? '') as string;
+      return (
+        <div className={`${lineBase} text-violet-400/95`}>
+          <span className="text-violet-500/80">▶</span> Spawn agent: <span className="font-medium">{role || '…'}</span>
+        </div>
+      );
+    }
+    if (name === 'mcp_swarm_check_inbox' || name === 'swarm_check_inbox') {
+      return (
+        <div className={`${lineBase} text-violet-400/90`}>
+          <span className="text-violet-500/80">▶</span> Check inbox
+        </div>
+      );
+    }
+    if (name === 'mcp_swarm_send_message' || name === 'swarm_send_message') {
+      const to = (args.to ?? args.recipient ?? '') as string;
+      return (
+        <div className={`${lineBase} text-violet-400/90`}>
+          <span className="text-violet-500/80">▶</span> Send message → {to || '…'}
+        </div>
+      );
+    }
+    if (name === 'todo_add') {
+      const desc = String(args.description ?? args.task ?? args.content ?? '');
+      const short = desc.slice(0, 80);
+      return (
+        <div className={`${lineBase} text-emerald-400/90`}>
+          <span className="text-emerald-500/80">+</span> Todo: {short}{desc.length > 80 ? '…' : ''}
+        </div>
+      );
+    }
+    if (name === 'todo_complete') {
+      const id = (args.id ?? args.task_id ?? '') as string;
+      return (
+        <div className={`${lineBase} text-emerald-400/90`}>
+          <span className="text-emerald-500/80">✓</span> Todo done{id ? ` (${id})` : ''}
+        </div>
+      );
+    }
 
     const generic = JSON.stringify(args).slice(0, MAX_GENERIC_LEN);
     const more = JSON.stringify(args).length > MAX_GENERIC_LEN ? '…' : '';

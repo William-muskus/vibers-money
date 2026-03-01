@@ -18,12 +18,25 @@ const MIN_MOSAIC_PX = 280;
 const MAX_MOSAIC_PX = 720;
 const DEFAULT_MOSAIC_PX = 420;
 
+const SWARM_HEIGHT_KEY = 'chat-swarm-height';
+const MIN_SWARM_PX = 120;
+const MAX_SWARM_PX = 560;
+const DEFAULT_SWARM_PX = 280;
+
 function getStoredMosaicWidth(): number {
   if (typeof window === 'undefined') return DEFAULT_MOSAIC_PX;
   const stored = localStorage.getItem(MOSAIC_WIDTH_KEY);
   if (stored == null) return DEFAULT_MOSAIC_PX;
   const n = parseInt(stored, 10);
   return Number.isFinite(n) ? Math.min(MAX_MOSAIC_PX, Math.max(MIN_MOSAIC_PX, n)) : DEFAULT_MOSAIC_PX;
+}
+
+function getStoredSwarmHeight(): number {
+  if (typeof window === 'undefined') return DEFAULT_SWARM_PX;
+  const stored = localStorage.getItem(SWARM_HEIGHT_KEY);
+  if (stored == null) return DEFAULT_SWARM_PX;
+  const n = parseInt(stored, 10);
+  return Number.isFinite(n) ? Math.min(MAX_SWARM_PX, Math.max(MIN_SWARM_PX, n)) : DEFAULT_SWARM_PX;
 }
 
 export default function ChatPageClient({
@@ -37,6 +50,7 @@ export default function ChatPageClient({
   const [showQR, setShowQR] = useState(false);
   const [showMosaic, setShowMosaic] = useState(false);
   const [mosaicWidth, setMosaicWidth] = useState(DEFAULT_MOSAIC_PX);
+  const [swarmHeight, setSwarmHeight] = useState(DEFAULT_SWARM_PX);
   const [chatUrl, setChatUrl] = useState('');
   const [myBusinessCount, setMyBusinessCount] = useState(0);
   const [agentsInThisBusiness, setAgentsInThisBusiness] = useState(0);
@@ -44,9 +58,11 @@ export default function ChatPageClient({
   const [pauseLoading, setPauseLoading] = useState(false);
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const resizeStartRef = useRef<{ x: number; w: number } | null>(null);
+  const swarmResizeStartRef = useRef<{ y: number; h: number } | null>(null);
 
   useEffect(() => {
     setMosaicWidth(getStoredMosaicWidth());
+    setSwarmHeight(getStoredSwarmHeight());
   }, []);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
@@ -62,6 +78,30 @@ export default function ChatPageClient({
     window.removeEventListener('mousemove', handleResizeMove);
     window.removeEventListener('mouseup', handleResizeEnd);
   }, [handleResizeMove]);
+
+  const handleSwarmResizeMove = useCallback((e: MouseEvent) => {
+    if (!swarmResizeStartRef.current) return;
+    const { y: startY, h: startH } = swarmResizeStartRef.current;
+    const next = Math.min(MAX_SWARM_PX, Math.max(MIN_SWARM_PX, startH + startY - e.clientY));
+    setSwarmHeight(next);
+    if (typeof window !== 'undefined') localStorage.setItem(SWARM_HEIGHT_KEY, String(next));
+  }, []);
+
+  const handleSwarmResizeEnd = useCallback(() => {
+    swarmResizeStartRef.current = null;
+    window.removeEventListener('mousemove', handleSwarmResizeMove);
+    window.removeEventListener('mouseup', handleSwarmResizeEnd);
+  }, [handleSwarmResizeMove]);
+
+  const startSwarmResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      swarmResizeStartRef.current = { y: e.clientY, h: swarmHeight };
+      window.addEventListener('mousemove', handleSwarmResizeMove);
+      window.addEventListener('mouseup', handleSwarmResizeEnd);
+    },
+    [swarmHeight, handleSwarmResizeMove, handleSwarmResizeEnd]
+  );
 
   const startResize = useCallback(
     (e: React.MouseEvent) => {
@@ -226,20 +266,31 @@ export default function ChatPageClient({
           </div>
           {showMosaic && (
             <>
-              <div
-                role="separator"
-                aria-label="Resize mosaic panel"
-                onMouseDown={startResize}
-                className="w-1 shrink-0 cursor-col-resize select-none border-l border-white/10"
-              />
+              <div className="flex shrink-0 cursor-col-resize justify-center" style={{ width: 12 }}>
+                <div
+                  role="separator"
+                  aria-label="Resize mosaic panel"
+                  onMouseDown={startResize}
+                  className="w-1 flex-shrink-0 select-none bg-transparent"
+                />
+              </div>
               <aside
-                className="flex shrink-0 flex-col gap-4 overflow-hidden border-white/10"
-                style={{ width: mosaicWidth }}
+                className="flex shrink-0 flex-col overflow-hidden border-white/10"
+                style={{ width: mosaicWidth, minWidth: mosaicWidth }}
               >
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/5 bg-[#14151c]/90 p-4 backdrop-blur-xl">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <MosaicGrid businessId={businessId} />
                 </div>
-                <div className="h-[280px] shrink-0 overflow-hidden lg:h-[320px]">
+                <div
+                  role="separator"
+                  aria-label="Resize mosaic and swarm height"
+                  onMouseDown={startSwarmResize}
+                  className="h-1.5 shrink-0 cursor-row-resize select-none bg-transparent"
+                />
+                <div
+                  className="min-h-0 shrink-0 overflow-hidden"
+                  style={{ height: swarmHeight }}
+                >
                   <SwarmFeed businessId={businessId} />
                 </div>
               </aside>

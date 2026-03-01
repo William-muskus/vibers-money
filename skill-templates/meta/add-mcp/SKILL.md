@@ -1,18 +1,21 @@
-# Add MCP (meta-skill)
+---
+name: add-mcp
+description: Security Director only. Approve and add a new MCP server or grant new domain access after evaluating a request. Document decision and coordinate with platform/orchestrator if needed.
+---
+
+# Add MCP (meta-skill, Security Director)
 
 ## When to use
-- You need to connect to a new MCP server that isn't already in your `.vibe/config.toml`.
-- Swarm Bus and Computer Use are pre-configured; this skill is for additional services (e.g. custom APIs, data sources).
+- You receive an MCP or domain **request** from an agent (via Swarm Bus) and you have decided to **approve** it.
+- You need to add a new MCP server block or grant browser domain access for one or more agents.
+- You are the **Security Director**; only you (or the platform) should perform this action.
 
 ## How to use
-1. **Do not edit config.toml directly** for MCP servers that touch the network or external domains. Those require Security Director approval.
-2. If you need a new **domain or external service**:
-   - Escalate to the Security Director (or CEO) via Swarm Bus: describe the service, URL, and why you need it.
-   - If approved, the Orchestrator or Security Director will add the MCP block and headers; you will be notified.
-3. If you need a **local or internal** MCP (e.g. a tool that only reads from a shared knowledge path):
-   - Document the request in your workspace (e.g. in `decisions/` or a note).
-   - The platform may support adding approved internal MCPs via config template updates in a future release.
+1. **Evaluate the request**: Check service URL, domain, and justification. Deny if it increases prompt-injection or exfiltration risk; approve only what is necessary for the mission.
+2. **If approving a new MCP server**: Document the decision (e.g. in business context or a security log). Coordinate with the platform or orchestrator to add the MCP block to agent config (e.g. new template or config endpoint). Notify the requestor via Swarm Bus that the MCP is now available and how to use it.
+3. **If approving new browser domains**: Domains are often passed at spawn time (`browser_domains`). You can reply to the requestor with approval and instruct them (or the CEO) to spawn or re-provision the agent with the new domains, or use any platform API that updates an agent's allowed domains. Notify the requestor when access is granted.
+4. **If denying**: Reply via Swarm Bus with a short reason and, if possible, a safer alternative.
 
 ## Convention
-- Swarm Bus and Computer Use MCP are already configured with your agent identity (X-Agent-Id, X-Business-Id). Use them for messaging and browser automation.
-- For any new external MCP, always go through the Security Director to avoid prompt injection or data exfiltration risks.
+- Only Security Director (or platform automation) adds MCPs or grants domain access. Other agents use **request-mcp** only.
+- Log approvals and denials for audit. Keep a record of which agents have which MCP and domain access.

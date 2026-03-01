@@ -1,3 +1,8 @@
+---
+name: check-messages
+description: Check your Swarm Bus inbox at the start of every work cycle. Use mcp_swarm_check_inbox and process directives before other work.
+---
+
 # Check Messages (shared skill)
 
 ## When to use

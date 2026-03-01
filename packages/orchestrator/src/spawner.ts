@@ -17,12 +17,72 @@ const DEFAULT_WORKSPACE_ROOT = resolve(__dirname, '..', '..', '..');
 const WORKSPACE_ROOT = process.env.VIBERS_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT;
 const SWARM_BUS_URL = process.env.SWARM_BUS_URL || 'http://localhost:3100';
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:3000';
+
+const SWARM_BUS_TIMEOUT_MS = 20_000;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit & { timeoutMs?: number },
+): Promise<Response> {
+  const { timeoutMs = SWARM_BUS_TIMEOUT_MS, ...fetchOpts } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...fetchOpts, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw e;
+  }
+}
 const COMPUTER_USE_URL = process.env.COMPUTER_USE_URL || 'http://localhost:3200';
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || '';
 
 const BUSINESSES_DIR = join(WORKSPACE_ROOT, 'businesses');
 const AGENT_TEMPLATES_DIR = join(WORKSPACE_ROOT, 'agent-templates');
 const SKILL_TEMPLATES_DIR = join(WORKSPACE_ROOT, 'skill-templates');
+
+const TREE_MAX_DEPTH = 4;
+const TREE_MAX_ENTRIES_PER_DIR = 80;
+
+export type TreeEntry = { name: string; kind: 'dir' | 'file'; children?: TreeEntry[] };
+
+async function readTreeDir(dirPath: string, relativePath: string, depth: number): Promise<TreeEntry[]> {
+  if (depth >= TREE_MAX_DEPTH) return [];
+  let entries: { name: string; isDirectory(): boolean }[];
+  try {
+    entries = await readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const sorted = entries
+    .filter((e) => !e.name.startsWith('.'))
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, TREE_MAX_ENTRIES_PER_DIR);
+  const out: TreeEntry[] = [];
+  for (const e of sorted) {
+    const name = e.name;
+    const childPath = join(dirPath, name);
+    const rel = relativePath ? `${relativePath}/${name}` : name;
+    if (e.isDirectory()) {
+      const children = await readTreeDir(childPath, rel, depth + 1);
+      out.push({ name, kind: 'dir', children });
+    } else {
+      out.push({ name, kind: 'file' });
+    }
+  }
+  return out;
+}
+
+/** Return filesystem tree for a business (knowledge/, agents/ceo/workspace/, …). */
+export async function getBusinessTree(businessId: string): Promise<TreeEntry[]> {
+  const root = join(BUSINESSES_DIR, businessId);
+  return readTreeDir(root, '', 0);
+}
 
 const CEO_MISSION = `You are the CEO of this business. Translate the founder's vision into operational reality.
 
@@ -117,7 +177,8 @@ export async function provisionAgent(
   await ensureDir(vibeDir);
   await writeFile(join(vibeDir, 'config.toml'), configToml, 'utf-8');
 
-  for (const category of ['meta', 'shared']) {
+  // Copy meta, shared, and mcp skills into every agent (CEO and directors). MCP skills document Swarm Bus and Computer Use servers.
+  for (const category of ['meta', 'shared', 'mcp']) {
     const categoryPath = join(SKILL_TEMPLATES_DIR, category);
     try {
       const entries = await readdir(categoryPath, { withFileTypes: true });
@@ -146,7 +207,7 @@ async function registerWithSwarmBus(
   parent: string | null,
   lifecycle: 'infinite_loop' | 'task_based' = 'infinite_loop',
 ): Promise<void> {
-  const res = await fetch(`${SWARM_BUS_URL}/api/register`, {
+  const res = await fetchWithTimeout(`${SWARM_BUS_URL}/api/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -272,7 +333,7 @@ export async function spawnAgent(body: {
     process.start().catch((err) => logger.error('agent_start_error', { key: process.key, error: String((err as Error).message) }));
   }
 
-  await fetch(`${SWARM_BUS_URL}/api/inject`, {
+  await fetchWithTimeout(`${SWARM_BUS_URL}/api/inject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -281,6 +342,7 @@ export async function spawnAgent(body: {
       event_type: 'agent_online',
       content: `${role} is now online and ready.`,
     }),
+    timeoutMs: 10_000,
   }).catch((err) => logger.warn('ceo_notify_failed', { agentId, error: String(err) }));
 
   return { agent_key: process.key };
@@ -288,7 +350,7 @@ export async function spawnAgent(body: {
 
 /** Send founder message to CEO via Swarm Bus inject. */
 export async function injectFounderMessage(businessId: string, content: string): Promise<void> {
-  const res = await fetch(`${SWARM_BUS_URL}/api/inject`, {
+  const res = await fetchWithTimeout(`${SWARM_BUS_URL}/api/inject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

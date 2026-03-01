@@ -28,23 +28,35 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
               <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                 Businesses
               </p>
-              {businessIds.length === 0 ? (
-                <p className="animate-fade-in px-3 text-sm text-gray-500 dark:text-gray-400">No businesses yet</p>
-              ) : (
-                <ul className="space-y-0.5">
-                  {businessIds.map((id, i) => {
+              <ul className="space-y-0.5">
+                <li className="animate-fade-in-up opacity-0" style={{ animationDelay: '0s', animationFillMode: 'forwards' }}>
+                  <Link
+                    href="/"
+                    className={`block rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                      pathname === '/'
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'bg-indigo-500/15 text-indigo-600 shadow-sm dark:bg-indigo-400/15 dark:text-indigo-400'
+                    }`}
+                  >
+                    Launch a new business
+                  </Link>
+                </li>
+                {businessIds.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No businesses yet</li>
+                ) : (
+                  businessIds.map((id, i) => {
                     const isActive = pathname === `/chat/${id}` || currentBusinessId === id;
                     return (
                       <li
                         key={id}
                         className="animate-fade-in-up opacity-0"
-                        style={{ animationDelay: `${i * 0.03}s`, animationFillMode: 'forwards' }}
+                        style={{ animationDelay: `${(i + 1) * 0.03}s`, animationFillMode: 'forwards' }}
                       >
                         <Link
                           href={`/chat/${id}`}
                           className={`block rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                             isActive
-                              ? 'bg-indigo-500/15 text-indigo-600 shadow-sm dark:bg-indigo-400/15 dark:text-indigo-400'
+                              ? 'text-indigo-600 dark:text-indigo-400'
                               : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white'
                           }`}
                         >
@@ -52,9 +64,9 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
                         </Link>
                       </li>
                     );
-                  })}
-                </ul>
-              )}
+                  })
+                )}
+              </ul>
             </div>
             <div className="shrink-0 border-t border-gray-200/80 px-2 py-2 dark:border-white/5">
               <Link

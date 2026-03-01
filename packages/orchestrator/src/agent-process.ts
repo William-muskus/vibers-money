@@ -1,6 +1,6 @@
 /**
  * AgentProcess: spawns Vibe with --resume, maintains conversation via session,
- * queues real prompts, detects ask_user_question, idles when no work.
+ * queues real prompts (founder chat, swarm bus), idles when no work.
  */
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { openSync, closeSync, readdirSync, readFileSync, statSync } from 'fs';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import stripAnsi from 'strip-ansi';
 import type { Response } from 'express';
 import { RingBuffer } from './ring-buffer.js';
-import type { NDJSONMessage, StreamEvent, AskUserQuestion, AgentConfig } from './types.js';
+import type { NDJSONMessage, StreamEvent, AgentConfig } from './types.js';
 import { logger } from './logger.js';
 import { unregisterAgent } from './registry.js';
 
@@ -86,9 +86,6 @@ export class AgentProcess {
   /** Resolves when resume() is called so the loop can continue. */
   private resumeResolve: (() => void) | null = null;
 
-  /** True when the agent last used ask_user_question and is waiting for an answer. */
-  private waitingForUserAnswer = false;
-
   constructor(
     agentId: string,
     businessId: string,
@@ -132,18 +129,8 @@ export class AgentProcess {
 
     if (msg.role === 'system') return;
 
-    // Detect ask_user_question tool calls
-    if (msg.type === 'tool_use' && msg.name === 'ask_user_question') {
-      this.waitingForUserAnswer = true;
-      const args = (msg as { arguments?: string }).arguments;
-      let questions: AskUserQuestion[] = [];
-      try {
-        const parsed = typeof args === 'string' ? JSON.parse(args) : args;
-        questions = (parsed as { questions?: AskUserQuestion[] }).questions ?? [];
-      } catch { /* ignore */ }
-      logger.info('ask_user_question', { key: this.key, questionCount: questions.length });
-      this.broadcast({ type: 'ask_user', questions, agent: this.key });
-    }
+    // ask_user_question is CEO-only (founder questions); in this product the CEO has it disabled
+    // and asks in message content. Other agents use Swarm Bus to ask each other. No detection here.
 
     this.activityLog.push(msg);
 
@@ -172,15 +159,6 @@ export class AgentProcess {
         contentPreview: String(msg.content ?? '').slice(0, 60),
         subscriberCount: this.subscribers.size,
       });
-      // When CEO sends a substantive assistant message, assume they're waiting for founder reply
-      // (e.g. clarifying questions). Avoid spawning "Check your messages" until user responds.
-      if (role === 'assistant' && this.agentId === 'ceo') {
-        const content = msg.content;
-        const text = typeof content === 'string' ? content : Array.isArray(content)
-          ? (content as { text?: string }[]).map((p) => p?.text ?? '').join('')
-          : '';
-        if (text.trim().length > 20) this.waitingForUserAnswer = true;
-      }
     }
     this.broadcast({ type: 'activity', msg, agent: this.key });
   }
@@ -204,7 +182,6 @@ export class AgentProcess {
    */
   enqueuePrompt(text: string): void {
     this.pendingPrompts.push(text);
-    this.waitingForUserAnswer = false;
     this.wake();
   }
 
@@ -255,17 +232,15 @@ export class AgentProcess {
       // --- Determine prompt for this cycle ---
       let prompt: string;
 
-      if (!this.sessionId && !this.waitingForUserAnswer) {
+      if (!this.sessionId) {
         // First cycle: use the initial prompt from config
-        // Skip if waitingForUserAnswer — Vibe programmatic mode may not emit session_id,
-        // so we'd otherwise keep respawning with the same prompt. Idle until user replies.
         prompt = this.config.initialPrompt
           ?? 'Read your AGENTS.md and begin your work. Check your messages and todos.';
       } else if (this.pendingPrompts.length > 0) {
         prompt = this.pendingPrompts.shift()!;
       } else {
         // No work — idle until woken or poll interval
-        logger.info('agent_idle', { key: this.key, waitingForUserAnswer: this.waitingForUserAnswer, pollMs: POLL_INTERVAL_MS });
+        logger.info('agent_idle', { key: this.key, pollMs: POLL_INTERVAL_MS });
 
         await Promise.race([
           sleep(POLL_INTERVAL_MS),
@@ -277,9 +252,6 @@ export class AgentProcess {
 
         if (this.pendingPrompts.length > 0) {
           prompt = this.pendingPrompts.shift()!;
-        } else if (this.waitingForUserAnswer) {
-          // Still waiting for the founder — don't pester, keep idling
-          continue;
         } else if (this.agentId === 'ceo') {
           prompt =
             'Check your swarm bus inbox (swarm_check_inbox) and respond to your team. Keep responses concise. Synthesize updates and give brief next steps or acknowledgments.';
@@ -362,7 +334,6 @@ export class AgentProcess {
       // --- Process NDJSON stdout ---
       let lineBuffer = '';
       let stderrBuffer = '';
-      this.waitingForUserAnswer = false;
       let hasReceivedStdout = false;
       const NO_OUTPUT_TIMEOUT_MS = 45_000; // Kill if no stdout after 45s (unblocks loop for retry)
       const noOutputTimer = setTimeout(() => {
@@ -452,7 +423,6 @@ export class AgentProcess {
       logger.info('vibe_exit', {
         key: this.key,
         exitCode,
-        waitingForUser: this.waitingForUserAnswer,
         pendingPrompts: this.pendingPrompts.length,
         nextAction: exitCode !== 0 ? 'retry 5s' : hasWork ? 'immediate (has work)' : 'idle',
       });

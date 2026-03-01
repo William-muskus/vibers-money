@@ -66,7 +66,7 @@ export default function SwarmFeed({ businessId }: { businessId?: string }) {
   }, [filteredEvents]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-white/5 bg-[#14151c]/80 backdrop-blur-xl">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border border-white/5 bg-[#14151c]/80 backdrop-blur-xl">
       <h3 className="border-b border-white/5 px-3 py-2.5 text-sm font-semibold text-white">
         {businessId ? `Swarm Bus — ${businessId}` : 'Swarm Bus Live Feed'}
       </h3>

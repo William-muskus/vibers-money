@@ -1,3 +1,8 @@
+---
+name: update-skill
+description: Update an existing skill in .vibe/skills/ when it is outdated or requirements changed. Use read_file then search_replace or write_file, preserve structure.
+---
+
 # Update Skill (meta-skill)
 
 ## When to use

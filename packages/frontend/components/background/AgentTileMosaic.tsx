@@ -1,223 +1,120 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 
 /**
- * Grid of tiles in a Matrix / post-punk / post-web spirit.
- * Each cell shows a vertical stream of random characters (digital rain)
- * with a sporadic green pulse. No rainbow – monochrome green/black/cyan.
+ * Grid of tiles that light up sporadically (random delays, no wave).
+ * Renders only after mount to avoid hydration mismatch from animation styles.
  */
-const TILE = '8vmin';
+const TILE = '8vmin';  // bigger tiles = fewer squares
 const COLS = 28;
 const ROWS = 14;
 const DURATION = 72;
 
-// Matrix-style character set: digits, latin, katakana, symbols
-const MATRIX_CHARS =
-  '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
-  'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ' +
-  'ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵ' +
-  '!@#$%&*+=[]';
+// Random delay per cell so no correlation – sporadic lighting
+function delayForCell(row: number, col: number): number {
+  const u = ((row * 2654435761) ^ (col * 2246822519)) >>> 0;
+  return (u / 4294967296) * DURATION;
+}
 
-const CHARS_PER_COLUMN = 6;
-const RAIN_COLUMNS_PER_TILE = 3;
+// Rainbow: red, orange, yellow, green, blue, indigo, violet
+const TILE_COLORS = [
+  '239, 68, 68',    // red
+  '249, 115, 22',   // orange
+  '234, 179, 8',    // yellow
+  '34, 197, 94',    // green
+  '59, 130, 246',   // blue
+  '99, 102, 241',   // indigo
+  '139, 92, 246',   // violet
+] as const;
 
 function hashCell(row: number, col: number): number {
   return ((row * 2654435761) ^ (col * 2246822519)) >>> 0;
 }
 
-function delayForCell(row: number, col: number): number {
-  return (hashCell(row, col) / 4294967296) * DURATION;
+function colorForCell(row: number, col: number): string {
+  return TILE_COLORS[hashCell(row, col) % TILE_COLORS.length];
 }
 
-/** Per-character phase so each character changes at a different tick */
-function charPhase(row: number, col: number, colIdx: number, index: number): number {
-  return ((hashCell(row, col) + colIdx * 1000 + index * 31) >>> 0) % 97;
-}
-
-/** Character for (row, col, index); seed is derived from global tick + per-char phase */
-function charFor(row: number, col: number, colIdx: number, index: number, tick: number): string {
-  const phase = charPhase(row, col, colIdx, index);
-  const seed = Math.floor((tick + phase) / 4);
-  const h = (hashCell(row, col) + colIdx * 1000 + index * 31 + seed * 2654435789) >>> 0;
-  return MATRIX_CHARS[h % MATRIX_CHARS.length];
-}
-
-/** Rain fall duration – big speed range: very fast to very slow */
-function rainDurationForCell(row: number, col: number, columnIndex: number): number {
-  const base = hashCell(row, col);
-  const spread = 0.33 * 4294967296;
-  const h = (base + columnIndex * spread) >>> 0;
-  const u = h / 4294967296;
-  return 3 + u * 10; // 3s – 13s
-}
-
-/** Vivid burning white-green neon for lit tiles */
-const MATRIX_RGB_DIM = '120, 220, 160';
-const MATRIX_RGB_BRIGHT = '200, 255, 220';
-const MATRIX_RGB_LEAD = '230, 255, 240';
-
-/** Instagram/Lovable-style gradient: coral → pink → purple → blue (0–1) */
-const GRADIENT_STOPS: [number, number, number, number][] = [
-  [240, 148, 51, 0],      // #f09433
-  [225, 48, 108, 0.33],   // #e1306c
-  [131, 58, 180, 0.66],   // #833ab4
-  [64, 93, 230, 1],       // #405de6
-];
-
-function gradientRgb(t: number): { r: number; g: number; b: number } {
-  let i = 0;
-  while (i < GRADIENT_STOPS.length - 1 && t > GRADIENT_STOPS[i + 1][3]) i++;
-  const [r0, g0, b0, s0] = GRADIENT_STOPS[i];
-  const [r1, g1, b1, s1] = GRADIENT_STOPS[Math.min(i + 1, GRADIENT_STOPS.length - 1)];
-  const u = s1 > s0 ? (t - s0) / (s1 - s0) : 0;
-  return {
-    r: Math.round(r0 + (r1 - r0) * u),
-    g: Math.round(g0 + (g1 - g0) * u),
-    b: Math.round(b0 + (b1 - b0) * u),
-  };
-}
+const NOISE_DATA_URL =
+  "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
 export default function AgentTileMosaic() {
   const [mounted, setMounted] = useState(false);
-  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!mounted) return;
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 280 + Math.random() * 180);
-    return () => clearInterval(interval);
-  }, [mounted]);
-
-  const cells = useMemo(() => {
-    return Array.from({ length: ROWS }, (_, row) =>
-      Array.from({ length: COLS }, (_, col) => {
-        const delay = delayForCell(row, col);
-        return { row, col, delay };
-      })
-    );
-  }, []);
-
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-0 overflow-visible"
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
       aria-hidden
     >
       {mounted && (
         <div
-          className="grid gap-px overflow-visible"
+          className="grid gap-px"
           style={{
             gridTemplateColumns: `repeat(${COLS}, ${TILE})`,
             gridTemplateRows: `repeat(${ROWS}, ${TILE})`,
           }}
         >
-          {cells.flatMap((rowCells) =>
-            rowCells.map(({ row, col, delay }) => (
-              <div
-                key={`${row}-${col}`}
-                className="relative overflow-visible rounded-none"
-                style={{
-                  ['--tile-rgb' as string]: MATRIX_RGB_DIM,
-                  ['--tile-rgb-bright' as string]: MATRIX_RGB_BRIGHT,
-                  ['--tile-rgb-lead' as string]: MATRIX_RGB_LEAD,
-                }}
-              >
-                {/* Expanding ring pulse – visible ring that grows past the square */}
+          {Array.from({ length: ROWS }, (_, row) =>
+            Array.from({ length: COLS }, (_, col) => {
+              const delay = delayForCell(row, col);
+              const rgb = colorForCell(row, col);
+              return (
                 <div
-                  className="pointer-events-none absolute inset-0 z-0 rounded-full opacity-0"
+                  key={`${row}-${col}`}
+                  className="relative overflow-visible rounded-none"
                   style={{
-                    background: `radial-gradient(circle at center, transparent 0%, transparent 25%, rgba(${MATRIX_RGB_BRIGHT}, 0.35) 45%, rgba(${MATRIX_RGB_BRIGHT}, 0.15) 55%, transparent 72%)`,
-                    transformOrigin: 'center',
-                    animation: `matrix-ripple ${DURATION}s cubic-bezier(0.3, 0, 0.15, 1) infinite`,
+                    ['--tile-rgb' as string]: rgb,
+                    opacity: 0.03,
+                    animation: `tile-pulse ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
                     animationDelay: `${delay}s`,
                   }}
-                />
-                {/* Glow – outside overflow-hidden so box-shadow can bloom past the square; explicit none when idle */}
-                <div
-                  className="pointer-events-none absolute inset-0 z-2 rounded-none"
-                  style={{
-                    boxShadow: 'none',
-                    willChange: 'box-shadow',
-                    animation: `matrix-tile-glow ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
-                    animationDelay: `${delay}s`,
-                    animationFillMode: 'both',
-                  }}
-                />
-                {/* Clipped area: base + rain + lit (no glow here so shadow isn't clipped) */}
-                <div className="absolute inset-0 z-5 overflow-hidden rounded-none">
-                  {/* Idle = near-black; no green tint so “off” is obvious */}
+                >
+                  {/* 1. Ripple (below) – expanding gradient, opacity capped below square */}
                   <div
-                    className="pointer-events-none absolute inset-0 z-0 rounded-none"
+                    className="pointer-events-none absolute inset-0 rounded-full opacity-0"
                     style={{
-                      background: 'linear-gradient(180deg, #030403 0%, #050706 100%)',
+                      ['--tile-rgb' as string]: rgb,
+                      background: `radial-gradient(circle at center, rgba(${rgb}, 0.55) 0%, rgba(${rgb}, 0.28) 30%, rgba(${rgb}, 0.12) 50%, rgba(${rgb}, 0.04) 70%, transparent 85%)`,
+                      transformOrigin: 'center',
+                      animation: `tile-ripple ${DURATION}s cubic-bezier(0.3, 0, 0.15, 1) infinite`,
+                      animationDelay: `${delay}s`,
                     }}
                   />
-                  {/* Digital rain: 3 columns per tile, brightens in sync with pulse */}
+                  {/* 2. Glow (below square) – box-shadow only, same timing as pulse, never pierces */}
                   <div
-                    className="pointer-events-none absolute inset-0 z-10 flex flex-row items-stretch overflow-hidden matrix-rain-container"
+                    className="pointer-events-none absolute inset-0 rounded-none"
                     style={{
-                      fontFamily: 'ui-monospace, monospace',
-                      animation: `matrix-rain-brighten ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite, matrix-rain-opacity ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
-                      animationDelay: `${delay}s, ${delay}s`,
-                      animationFillMode: 'both, both',
+                      ['--tile-rgb' as string]: rgb,
+                      animation: `tile-glow ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
+                      animationDelay: `${delay}s`,
                     }}
-                  >
-                    {Array.from({ length: RAIN_COLUMNS_PER_TILE }, (_, colIdx) => {
-                      const rainDuration = rainDurationForCell(row, col, colIdx);
-                      const columnChars = Array.from(
-                        { length: CHARS_PER_COLUMN },
-                        (_, i) => charFor(row, col, colIdx, i, tick)
-                      );
-                      const phase = (hashCell(row, col) + colIdx * 0.33 * 4294967296) / 4294967296;
-                      return (
-                        <div
-                          key={colIdx}
-                          className="matrix-rain-column min-w-0 flex flex-1 flex-col items-center justify-start"
-                          style={{
-                            animation: `matrix-rain-fall ${rainDuration}s linear infinite`,
-                            animationDelay: `${(phase * rainDuration) % rainDuration}s`,
-                          }}
-                        >
-                          {[...columnChars, ...columnChars].map((c, i) => {
-                            const isLead = i % CHARS_PER_COLUMN === 0;
-                            const t = col / Math.max(COLS - 1, 1);
-                            const { r, g, b } = gradientRgb(t);
-                            const opacity = isLead ? 0.62 : 0.38;
-                            const glowOpacity = isLead ? 0.55 : 0.35;
-                            return (
-                              <span
-                                key={i}
-                                className="matrix-rain-char"
-                                style={{
-                                  color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
-                                  textShadow: `0 0 6px rgba(${r}, ${g}, ${b}, ${glowOpacity}), 0 0 12px rgba(${r}, ${g}, ${b}, ${glowOpacity * 0.5})`,
-                                }}
-                              >
-                                {c}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* “Lit” fill – max luminosity, retro neon when pulse hits */}
+                  />
+                  {/* 3. Square lights up – gradient “lit from within” neon */}
                   <div
-                    className="pointer-events-none absolute inset-0 z-5 rounded-none opacity-0 matrix-tile-lit-layer"
+                    className="pointer-events-none absolute inset-0 rounded-none opacity-0"
                     style={{
-                      background: `radial-gradient(ellipse 70% 70% at 50% 50%, rgba(${MATRIX_RGB_LEAD}, 0.98) 0%, rgba(${MATRIX_RGB_BRIGHT}, 0.92) 35%, rgba(${MATRIX_RGB_BRIGHT}, 0.6) 65%, rgba(${MATRIX_RGB_DIM}, 0.25) 100%)`,
-                      animation: `matrix-tile-lit ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
+                      background: `radial-gradient(ellipse 75% 75% at 50% 50%, rgba(${rgb}, 1) 0%, rgba(${rgb}, 0.92) 40%, rgba(${rgb}, 0.75) 100%)`,
+                      animation: `tile-lit ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
+                      animationDelay: `${delay}s`,
+                    }}
+                  />
+                  {/* 4. Noise – clean neon when lit */}
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-none opacity-0"
+                    style={{
+                      backgroundImage: NOISE_DATA_URL,
+                      animation: `tile-pulse-noise ${DURATION}s cubic-bezier(0.4, 0, 0.2, 1) infinite`,
                       animationDelay: `${delay}s`,
                     }}
                   />
                 </div>
-              </div>
-            ))
+              );
+            }),
           )}
         </div>
       )}

@@ -15,8 +15,8 @@ export function createSpawningTools() {
       inputSchema: {
         role: z.string().describe('Role name (e.g. community-manager, marketing-director)'),
         business: z.string().describe('Business ID (must match your business)'),
-        mission: z.string().describe('Mission brief for the new agent (2–4 sentences). Include or reference macro objectives.'),
-        macro_objectives: z.array(z.string()).optional().describe('List of 3–5 macro objectives (concrete outcomes) for the agent. They will use these to write skills and create their initial todo list.'),
+        mission: z.string().describe('Mission brief for the new agent (2–4 sentences).'),
+        macro_objectives: z.array(z.string()).min(1).describe('Required. List of 3–5 macro objectives (concrete outcomes). The agent uses these to write skills and create their initial todo list.'),
         browser_domains: z.array(z.string()).optional().describe('Allowed domains for browser tools (e.g. ["x.com", "twitter.com"])'),
         skills: z.array(z.string()).optional().describe('Skill names to copy into agent workspace'),
         lifecycle: z.enum(['infinite_loop', 'task_based']).optional().describe('Default: infinite_loop'),
@@ -25,7 +25,7 @@ export function createSpawningTools() {
         role: string;
         business: string;
         mission: string;
-        macro_objectives?: string[];
+        macro_objectives: string[];
         browser_domains?: string[];
         skills?: string[];
         lifecycle?: 'infinite_loop' | 'task_based';
@@ -46,7 +46,7 @@ export function createSpawningTools() {
             role: args.role,
             business: args.business,
             mission: args.mission,
-            macro_objectives: args.macro_objectives ?? [],
+            macro_objectives: args.macro_objectives,
             browser_domains: args.browser_domains ?? [],
             skills: args.skills ?? [],
             lifecycle: args.lifecycle ?? 'infinite_loop',

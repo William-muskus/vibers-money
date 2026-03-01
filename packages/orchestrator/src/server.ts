@@ -22,6 +22,7 @@ import {
   createBusinessAndSpawnCEO,
   spawnAgent,
   injectFounderMessage,
+  getBusinessTree,
 } from './spawner.js';
 import { logger } from './logger.js';
 
@@ -238,6 +239,19 @@ app.get('/api/business/:id/status', (req: Request, res: Response) => {
   const processes = getProcessesForBusiness(businessId);
   const paused = processes.length > 0 && processes.every((p) => p.isPaused());
   res.json({ paused });
+});
+
+/** GET /api/business/:id/tree — Filesystem tree (knowledge/, agents/<role>/workspace/, …). */
+app.get('/api/business/:id/tree', async (req: Request, res: Response) => {
+  const businessId = req.params.id;
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  try {
+    const tree = await getBusinessTree(businessId);
+    res.json({ tree });
+  } catch (err) {
+    logger.error('business_tree_error', { businessId, error: String((err as Error).message) });
+    res.status(500).json({ error: String((err as Error).message) });
+  }
 });
 
 /** POST /api/business/:id/pause — Put the infinite loop on hold for all agents in this business. */
