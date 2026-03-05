@@ -1,6 +1,6 @@
 ---
 name: request-mcp
-description: Request a new MCP server or new browser domain access. For CEO and all agents. Escalate to Security Director with service, URL, and justification; do not edit config yourself.
+description: Request a new MCP server or new browser domain access to the Security Director Agent. For CEO and all agents. Escalate to Security Director with service, URL, and justification; do not edit config yourself.
 ---
 
 # Request MCP (shared skill)

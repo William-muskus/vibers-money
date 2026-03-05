@@ -156,7 +156,6 @@ vibers-money/
 | `SWARM_BUS_URL` | No | Default `http://localhost:3100`. Set in production to your Swarm Bus URL. |
 | `ORCHESTRATOR_URL` | No | Default `http://localhost:3000`. Used by Swarm Bus / webhooks. |
 | `COMPUTER_USE_URL` | No | Default `http://localhost:3200`. For agents that use browser automation. |
-| `VIBERS_HACKATHON_DEMO` | No | Set to `1` to enable hackathon CEO instructions (email + Community Manager for X first). |
 | **Stripe** | For funding | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`; see [Stripe README](packages/frontend/app/api/stripe/README.md). |
 | **AWS Bedrock** | Optional | `USE_AWS_BEDROCK=1`, `BEDROCK_GATEWAY_URL`, `BEDROCK_GATEWAY_API_KEY` for inference via a Bedrock gateway. |
 
@@ -191,9 +190,8 @@ Frontend (e.g. in Vercel) also needs:
 
 ## License
 
-Private / hackathon project. See repository for terms.
+Private project. See repository for terms.
 
 ---
 
-**Built at the Mistral AI Hackathon.**  
 *Just vibe it.*

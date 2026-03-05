@@ -8,7 +8,7 @@ description: Create the single business email address for this business (e.g. fo
 ## When to use
 - The business needs a **single** dedicated email address (e.g. to create an X account, register for a service, or for official communications).
 - No business email has been created yet (check with CEO or workspace docs first).
-- You are the Security Director or Marketing Director (CMO) and this falls under your remit.
+- You are the Security Director and this falls under your remit.
 
 ## How to use
 
@@ -28,11 +28,11 @@ description: Create the single business email address for this business (e.g. fo
    Proton Mail signup uses a **drag-and-drop puzzle** captcha (slide the piece into place). Use the **solve-captcha** skill: take a screenshot, identify the draggable piece and target slot, then use **drag** (or **drag_offset**) to align the piece. Re-screenshot until the puzzle is solved and the page advances.
 
 5. **Submit and confirm**  
-   - **Click** the signup/submit button. **Wait** for the next page; take a **screenshot** to confirm. Record the new email address and any recovery info in the agreed place (e.g. draft in workspace or secure message to CEO).
+   - **Click** the signup/submit button. **Wait** for the next page; take a **screenshot** to confirm. Record the new email address and any recovery info in the workspace.
 
 6. **Report**  
-   Inform the CEO via Swarm Bus that the business email was created and where it is documented so all agents can use check-email and send-email.
+   Inform the CEO via Swarm Bus that the business email was created and where it is documented in the workspace so all agents can use check-email and send-email.
 
 ## Convention
 - **One business email per business.** If one already exists, use check-email and send-email instead; do not create another.
-- Use the **free plan** signup URL above. Credentials must be stored or shared only per security policy.
+- Credentials must be stored or shared only per security policy.

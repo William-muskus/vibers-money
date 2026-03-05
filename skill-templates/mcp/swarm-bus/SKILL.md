@@ -12,9 +12,9 @@ Tool prefix: `mcp_swarm_*` (server name: `swarm-bus`).
 
 ## Work cycle (mandatory order)
 
-1. `mcp_swarm_check_inbox` — read all pending messages first.
-2. Process messages and do your work.
-3. `mcp_swarm_report_status` — report progress to your manager before ending the cycle.
+1. **Check inbox** — call `mcp_swarm_check_inbox` before doing anything else. Process each message in order: follow directives, respond to escalations if you are the decision-maker, add todos for follow-up. Messages may contain mission updates, budget approvals, or urgent pivots — always process before continuing proactive work.
+2. **Do your work** — execute todos, complete mission tasks, use Computer Use or other tools as needed.
+3. **Report status** — call `mcp_swarm_report_status` with a 1–3 sentence summary: what you did, what's next, any blockers. Report up the chain (to your direct parent). CEO reports to the founder via the chat interface, not via Swarm Bus. If you are blocked, say so and escalate if needed.
 
 ---
 
