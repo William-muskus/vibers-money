@@ -192,17 +192,29 @@ export default function ChatView({
           return;
         }
 
-        if (messageId) {
-          if (seenIdsRef.current.has(messageId)) return;
-          seenIdsRef.current.add(messageId);
-        }
-
         setWaitingForReply(false);
         setShowTypingIndicator(false);
         if (typingTimeoutRef.current) {
           clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = null;
         }
+
+        // Merge streaming chunks: if this assistant message has the same message_id as the last assistant message, append content
+        if (messageId && seenIdsRef.current.has(messageId)) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.kind === 'text' && last.role === 'assistant' && (last as { id?: string }).id === messageId) {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: (last.content || '').trimEnd() + '\n\n' + content.trim() },
+              ];
+            }
+            return [...prev, { kind: 'text' as const, id: messageId, role, content }];
+          });
+          return;
+        }
+        if (messageId) seenIdsRef.current.add(messageId);
+
         setMessages((prev) => [...prev, { kind: 'text', id: messageId, role, content }]);
       },
       () => setConnectionFailed(true),

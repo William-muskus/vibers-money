@@ -1,41 +1,177 @@
 ---
 name: computer-use
-description: How to use the Computer Use MCP for browsing approved domains. Use when you need to click, type, navigate, or take screenshots. Tool names mcp_computer_*.
+description: Complete reference for the Computer Use MCP. Covers all tools — screenshot, navigation, clicking, typing, keyboard, scrolling, drag, tabs. Tool names are mcp_computer_use_* (server name "computer-use").
 ---
 
-# Use Computer Use MCP (MCP skill)
+# Computer Use MCP — Complete Reference
 
-## When to use
-- You need to browse the web, fill forms, click buttons, or read content on an approved domain.
-- Your AGENTS.md lists approved domains (e.g. `x.com`, `twitter.com`). You may only use **approved domains**; for others, request access from the Security Director via Swarm Bus.
+The Computer Use MCP gives you a real Chrome browser. You can navigate websites, read content, fill forms, and interact with UI elements — **only on approved domains**.
 
-## How to use (tool names: `mcp_computer_*` or as exposed by your MCP client)
+Tool prefix: `mcp_computer_use_*` (server name: `computer-use`).
 
-**Basic workflow**
-1. **Screenshot** — Take an annotated screenshot. The tool returns an image and a list of **interactive elements with numbers**.
-2. **Act on elements** — Use the **element number** (e.g. `42`) to click, type, or select. Always use the number from the latest screenshot; the page may change after each action.
-3. **Navigate** — Use **navigate** with a URL (must be on your approved domain list). Use **wait** after navigation or clicks if the page needs time to load.
+---
 
-**Core tools**
-- **screenshot** — Take a screenshot; every clickable/typed element is labeled with a number. Returns image + elements list.
-- **get_page_info** — Get current URL, title, and frames (no screenshot).
-- **navigate** — Go to a URL (approved domains only).
-- **wait** — Wait N seconds, then take a new screenshot (useful after navigation or slow updates).
-- **click** — Click element by number (`element_id`). Use human-like cursor motion.
-- **type** — Type text; optional `clear_first`. **Click the input first** to focus it, then call type.
-- **double_click**, **hover** — By `element_id`.
-- **press** — Send a key (Enter, Tab, Escape, Backspace). Use **type** for normal text.
-- **scroll** — Scroll the page (`delta_x`, `delta_y`; positive deltaY = scroll down).
-- **select_option** — Select a dropdown option by `element_id` and `value`.
-- **drag**, **drag_offset** — Drag elements.
+## Core workflow (always follow this loop)
 
-**Tabs**
-- **tab_list** — List open tabs (targetId per tab).
-- **tab_open** — Open a new tab; optional URL.
-- **tab_switch** — Switch to a tab by targetId.
-- **tab_close** — Close a tab.
+1. **`mcp_computer_use_screenshot`** — see the current page. Every interactive element is labeled with a number.
+2. **Choose the element** by its number from the list returned.
+3. **Act** — click, type, press, scroll, etc. — using that number.
+4. **`mcp_computer_use_screenshot`** again to verify the result before the next action.
 
-## Convention
-- One action at a time: take screenshot → choose element → click or type → take screenshot again to see the result.
-- If the element list is empty or the page changed, take a fresh screenshot and use the new element numbers.
-- Stay on approved domains. For new domains, escalate to Security Director (add-mcp skill).
+> One action at a time. Never guess element IDs — always take a fresh screenshot if the page changed.
+
+---
+
+## Vision
+
+### `mcp_computer_use_screenshot`
+Take an annotated screenshot of the current page.
+```
+(no parameters)
+```
+Returns: `{ image, url, title, elements: [{ id, tag, text, role, ... }] }`
+
+Every interactive element (links, buttons, inputs, selects, checkboxes…) gets a unique number. Use that number for all subsequent actions.
+
+### `mcp_computer_use_get_page_info`
+Get current URL, title, and frames — no screenshot.
+```
+(no parameters)
+```
+Returns: `{ url, title, frames }`.
+
+---
+
+## Navigation
+
+### `mcp_computer_use_navigate`
+Go to a URL. Waits ~1.5 s then returns an annotated screenshot.
+```
+url: string   # full URL, e.g. "https://x.com" — must be on your approved domain list
+```
+Returns: same as `screenshot`.
+
+> If the URL is not on your approved domain list, the call is rejected. To request access to a new domain, escalate to the Security Director (see **add-mcp** skill or **request-mcp** skill).
+
+### `mcp_computer_use_wait`
+Wait N seconds, then take a new annotated screenshot. Use after navigation or slow UI updates.
+```
+seconds?: number   # default 2
+```
+Returns: same as `screenshot`.
+
+---
+
+## Interaction
+
+### `mcp_computer_use_click`
+Click an element by its annotation number. Uses human-like Bezier cursor motion.
+```
+element_id: number   # number from the screenshot elements list
+```
+Returns: annotated screenshot after the click.
+
+### `mcp_computer_use_type`
+Type text with human-like key timing. **Click the input first** to focus it, then call type.
+```
+text: string           # text to enter
+clear_first?: boolean  # clear the field before typing (default false)
+```
+Returns: annotated screenshot after typing.
+
+### `mcp_computer_use_double_click`
+Double-click an element.
+```
+element_id: number
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_hover`
+Move the mouse over an element (trigger tooltips, hover menus, etc.).
+```
+element_id: number
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_press`
+Press a special key. Use `type` for regular text; use `press` for control keys.
+```
+key: string   # e.g. "Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_scroll`
+Scroll the page by pixel delta. Positive `delta_y` = scroll down.
+```
+delta_x?: number   # horizontal scroll (default 0)
+delta_y?: number   # vertical scroll (default 300)
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_select_option`
+Select a dropdown option in a `<select>` element.
+```
+element_id: number   # annotation number of the <select> element
+value: string        # option value attribute to select
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_drag`
+Drag from one element to another.
+```
+from_element_id: number
+to_element_id: number
+```
+Returns: annotated screenshot.
+
+### `mcp_computer_use_drag_offset`
+Drag an element by a pixel offset from its current position.
+```
+element_id: number
+delta_x: number
+delta_y: number
+```
+Returns: annotated screenshot.
+
+---
+
+## Tabs
+
+Each agent gets its own isolated browser context. You can open multiple tabs.
+
+### `mcp_computer_use_tab_list`
+List your open tabs.
+```
+(no parameters)
+```
+Returns: `{ tabs: [{ targetId, ... }] }`.
+
+### `mcp_computer_use_tab_open`
+Open a new tab, optionally navigating to a URL (must be on approved domain list).
+```
+url?: string   # optional — navigate immediately after opening
+```
+Returns: `{ targetId, image, url, title, elements }`.
+
+### `mcp_computer_use_tab_switch`
+Switch the active tab.
+```
+target_id: string   # targetId from tab_list
+```
+Returns: annotated screenshot of the switched-to tab.
+
+### `mcp_computer_use_tab_close`
+Close a tab.
+```
+target_id: string   # targetId from tab_list
+```
+
+---
+
+## Conventions
+
+- **Approved domains only.** Your `AGENTS.md` lists allowed domains. Never attempt to navigate elsewhere; the call will fail. To request a new domain, use the `request-mcp` skill or escalate to the Security Director.
+- **Always screenshot before acting.** Element IDs change whenever the page re-renders; never reuse an old ID without a fresh screenshot.
+- **Prefer `type` over `press`** for text. Use `press` only for non-character keys (Enter, Tab, Escape, etc.).
+- **After navigation or slow transitions**, call `mcp_computer_use_wait` with a few seconds before interacting.
+- **Captchas**: use the `solve-captcha` skill when you encounter a CAPTCHA.

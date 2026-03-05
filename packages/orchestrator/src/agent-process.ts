@@ -120,10 +120,15 @@ export class AgentProcess {
     }
 
     const mid = (msg as { message_id?: string }).message_id;
-    if (typeof mid === 'string' && mid) {
+    const role = msg.role as string | undefined;
+    // Dedupe by message_id for non-assistant so we don't repeat injects; allow multiple assistant chunks (streaming) with same id
+    if (typeof mid === 'string' && mid && role !== 'assistant') {
       if (this.seenMessageIds.has(mid)) {
         return;
       }
+      this.seenMessageIds.add(mid);
+    }
+    if (typeof mid === 'string' && mid && role === 'assistant') {
       this.seenMessageIds.add(mid);
     }
 
@@ -151,7 +156,6 @@ export class AgentProcess {
       }
     }
 
-    const role = msg.role as string | undefined;
     if (role === 'assistant' || role === 'user') {
       logger.info('broadcast_activity', {
         key: this.key,
@@ -345,13 +349,6 @@ export class AgentProcess {
       let lineBuffer = '';
       let stderrBuffer = '';
       let hasReceivedStdout = false;
-      const NO_OUTPUT_TIMEOUT_MS = 45_000; // Kill if no stdout after 45s (unblocks loop for retry)
-      const noOutputTimer = setTimeout(() => {
-        if (!hasReceivedStdout && this.process) {
-          logger.warn('vibe_no_output_timeout', { key: this.key, action: 'killing_process' });
-          this.process.kill();
-        }
-      }, NO_OUTPUT_TIMEOUT_MS);
 
       this.process.stdout?.on('data', (chunk: Buffer) => {
         const text = chunk.toString();
@@ -406,8 +403,6 @@ export class AgentProcess {
       const exitCode = await new Promise<number | null>((resolve) => {
         this.process?.on('exit', resolve);
       });
-
-      clearTimeout(noOutputTimer);
 
       if (exitCode !== 0 && exitCode !== null && stderrBuffer.trim()) {
         logger.warn('vibe_exit_stderr', { key: this.key, exitCode, stderr: stderrBuffer.trim().slice(0, 500) });

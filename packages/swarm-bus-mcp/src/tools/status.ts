@@ -1,10 +1,10 @@
 /**
- * P1: swarm_report_status, swarm_get_business_context, swarm_update_business_context
+ * P1: swarm_report_status, swarm_list_agents, swarm_get_business_context, swarm_update_business_context
  */
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { getIdentity } from '../context.js';
-import { getAgent } from '../core/registry.js';
+import { getAgent, getAgentsByBusiness } from '../core/registry.js';
 import { addToInbox } from '../core/store.js';
 import { scheduleWake } from '../core/wake.js';
 import type { Message } from '../types.js';
@@ -18,6 +18,21 @@ function getContext(businessId: string): Map<string, string> {
 
 export function createStatusTools() {
   return {
+    swarm_list_agents: {
+      description: 'List all agents currently registered and running in your business. Returns their role names and IDs. Use this to know which directors/specialists are already spawned before sending messages or spawning duplicates.',
+      inputSchema: {},
+      handler: async (_args: Record<string, never>) => {
+        const { businessId } = getIdentity();
+        const agents = getAgentsByBusiness(businessId).map((a) => ({
+          role: a.role,
+          agent_id: a.agent_id,
+          role_type: a.role_type,
+          lifecycle: a.lifecycle,
+        }));
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ agents }) }] };
+      },
+    },
+
     swarm_report_status: {
       description: 'Report your status to your parent.',
       inputSchema: { content: z.string() },

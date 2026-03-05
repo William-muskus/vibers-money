@@ -2,8 +2,6 @@
 
 You own a GoDaddy domain (e.g. **vibers-app.com** or **vibers-app.money**). GoDaddy only holds the domain; you host the app elsewhere and point the domain there via DNS.
 
-- **Use your $100 AWS credit for hosting** → see **[Host on AWS → vibers-app.money](DEPLOY-AWS-VIBERS-APP-MONEY.md)** (Amplify + App Runner or single instance).
-
 ## Architecture
 
 - **Frontend**: Next.js 15 (`packages/frontend`) — port 3001

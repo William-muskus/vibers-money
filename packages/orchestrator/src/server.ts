@@ -298,6 +298,11 @@ app.post('/api/agents/spawn', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Missing role, business, or mission' });
       return;
     }
+    if (body.role.toLowerCase() === 'ceo') {
+      logger.warn('spawn_ceo_rejected', { business: body.business });
+      res.status(400).json({ error: 'Cannot spawn a CEO — there is exactly one CEO per business, created when the business is created.' });
+      return;
+    }
     logger.info('spawn_request', { role: body.role, business: body.business, parent_agent_id: body.parent_agent_id });
     const result = await spawnAgent({
       role: body.role,
