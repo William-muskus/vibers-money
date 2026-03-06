@@ -8,6 +8,10 @@ dist/
 out/
 *.tsbuildinfo
 
+# Project docs (local-only in this repo)
+docs/
+documentation/
+
 # Environment
 .env
 .env.local
@@ -29,6 +33,9 @@ npm-debug.log*
 
 # Vibe / Mistral
 .vibe/
+
+# Runtime business workspaces (generated)
+businesses/
 
 # Stripe Connect per-business account IDs (sensitive)
 data/

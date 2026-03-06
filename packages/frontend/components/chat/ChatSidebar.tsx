@@ -74,23 +74,24 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
                 {businessIds.length === 0 ? (
                   <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No businesses yet</li>
                 ) : (
-                  businessIds.map((id, i) => {
-                    const isActive = pathname === `/chat/${id}` || currentBusinessId === id;
+                  businessIds.filter((id) => id != null && String(id).trim() !== '').map((id, i) => {
+                    const sid = String(id).trim();
+                    const isActive = pathname === `/chat/${sid}` || currentBusinessId === sid;
                     return (
                       <li
-                        key={id}
+                        key={sid || `business-${i}`}
                         className="animate-fade-in-up opacity-0"
                         style={{ animationDelay: `${(i + 1) * 0.03}s`, animationFillMode: 'forwards' }}
                       >
                         <Link
-                          href={`/chat/${id}`}
+                          href={`/chat/${encodeURIComponent(sid)}`}
                           className={`block rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                             isActive
                               ? 'text-indigo-600 dark:text-indigo-400'
                               : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white'
                           }`}
                         >
-                          {id}
+                          {sid}
                         </Link>
                       </li>
                     );

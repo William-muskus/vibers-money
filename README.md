@@ -121,6 +121,14 @@ npm run dev:frontend
 
 Go to **http://localhost:3001**. Type a business idea (e.g. *“Launch a sticker store for developers, focus on X”*). The CEO will reply, ask 1–3 short questions, and once you answer, spawn the org.
 
+### Running with a local model
+
+You can run agents with a locally hosted model (Ollama, vLLM, or llama.cpp) instead of the Mistral API. All agents share one local server, so requests queue and latency may increase when many agents are active — this is an acceptable tradeoff for local/offline use; the swarm is not capped.
+
+1. Start your local server (e.g. **Ollama**: `ollama serve`, then `ollama pull mistral:7b`).
+2. In `.env`, set `LOCAL_LLM_API_BASE` and optionally `LOCAL_LLM_MODEL` (default: `mistral:7b`). Example for Ollama: `LOCAL_LLM_API_BASE=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=mistral:7b`.
+3. Run the stack as usual; no `MISTRAL_API_KEY` is required. For full agent behavior (Swarm Bus, Computer Use, skills), use a model that supports OpenAI-style tool/function calling (e.g. Mistral 7B via Ollama).
+
 ---
 
 ## Project structure
@@ -158,6 +166,7 @@ vibers-money/
 | `COMPUTER_USE_URL` | No | Default `http://localhost:3200`. For agents that use browser automation. |
 | **Stripe** | For funding | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`; see [Stripe README](packages/frontend/app/api/stripe/README.md). |
 | **AWS Bedrock** | Optional | `USE_AWS_BEDROCK=1`, `BEDROCK_GATEWAY_URL`, `BEDROCK_GATEWAY_API_KEY` for inference via a Bedrock gateway. |
+| **Local LLM** | Optional | `LOCAL_LLM_API_BASE`, `LOCAL_LLM_MODEL` — when set, agents use an OpenAI-compatible local server (Ollama, vLLM, llama.cpp); no `MISTRAL_API_KEY` required. Default model: `mistral:7b`. |
 
 Frontend (e.g. in Vercel) also needs:
 

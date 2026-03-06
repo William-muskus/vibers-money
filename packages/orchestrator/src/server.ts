@@ -1,14 +1,8 @@
 /**
  * Orchestrator HTTP server: SSE endpoints, admin API, spawner integration.
- * Load .env from monorepo root (npm -w runs with cwd=packages/orchestrator, so
- * dotenv/config would miss the root .env).
+ * Load .env first so spawner (and others) see LOCAL_LLM_API_BASE etc. when they load.
  */
-import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, '../../../.env') });
+import './load-env.js';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import {
@@ -25,21 +19,12 @@ import {
   getBusinessTree,
   listBusinessIdsFromDisk,
 } from './spawner.js';
+import { deriveConceptSlug } from './derive-concept-slug.js';
 import { logger } from './logger.js';
 
-function normalizeBusinessId(id: string): string {
-  return id.replace(/^-+|-+$/g, '').replace(/-+/g, '-');
-}
-
-/** Resolve agents by business id (normalized or legacy with trailing dash). */
+/** Resolve agents by business id. */
 function getProcessesForBusiness(id: string): ReturnType<typeof getAgentsByBusiness> {
-  const n = normalizeBusinessId(id);
-  let p = getAgentsByBusiness(n);
-  if (p.length) return p;
-  p = getAgentsByBusiness(id);
-  if (p.length) return p;
-  if (n !== id) return getAgentsByBusiness(n + '-');
-  return [];
+  return getAgentsByBusiness(id.trim());
 }
 
 const app = express();
@@ -87,7 +72,7 @@ function sseHeaders(res: Response): void {
 app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
   const { key } = req.params;
   const businessId = key.includes('--') ? key.split('--')[0] : key;
-  if (!requireOwnershipIfSession(normalizeBusinessId(businessId), req, res)) return;
+  if (!requireOwnershipIfSession(businessId.trim(), req, res)) return;
   let process = getAgent(key);
   if (!process && key.endsWith('--ceo')) {
     process = getAgent(key.slice(0, -'--ceo'.length) + '---ceo');
@@ -105,11 +90,9 @@ app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
 /** GET /api/business/:id/stream — SSE for all agents in a business. */
 app.get('/api/business/:id/stream', (req: Request, res: Response) => {
   const { id: businessId } = req.params;
-  const normId = normalizeBusinessId(businessId);
-  if (!requireOwnershipIfSession(normId, req, res)) return;
-  let processes = getAgentsByBusiness(normId);
-  if (processes.length === 0) processes = getAgentsByBusiness(businessId);
-  if (processes.length === 0 && normId !== businessId) processes = getAgentsByBusiness(normId + '-');
+  const id = businessId.trim();
+  if (!requireOwnershipIfSession(id, req, res)) return;
+  const processes = getProcessesForBusiness(id);
   if (processes.length === 0) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(404).json({ error: 'Business not found or no agents', businessId });
@@ -163,8 +146,7 @@ app.get('/health', (_req: Request, res: Response) => {
 app.post('/api/business/create', async (req: Request, res: Response) => {
   try {
     const body = req.body as { business_id?: string; name?: string; founder_prompt?: string; founder_session_id?: string };
-    const raw = body.business_id ?? body.name?.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') ?? undefined;
-    const businessId = raw ? normalizeBusinessId(raw) : undefined;
+    const businessId = body.business_id?.trim() ?? (body.name ? await deriveConceptSlug(body.name) : undefined);
     if (!businessId) {
       logger.warn('business_create_missing_id', { body: Object.keys(body) });
       res.status(400).json({ error: 'Missing business_id or name' });

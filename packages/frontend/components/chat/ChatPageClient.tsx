@@ -10,7 +10,7 @@ import AgentTileMosaic from '@/components/background/AgentTileMosaic';
 import MosaicGrid from '@/components/admin/MosaicGrid';
 import SwarmFeed from '@/components/admin/SwarmFeed';
 import { getAdminAgents } from '@/lib/admin-api';
-import { getBusinessStatus, normalizeBusinessId, pauseBusiness, resumeBusiness } from '@/lib/api';
+import { getBusinessStatus, pauseBusiness, resumeBusiness } from '@/lib/api';
 import { canAccessBusiness, canAccessBusinessAsync, getMyBusinessIds } from '@/lib/local-businesses';
 
 const MOSAIC_WIDTH_KEY = 'chat-mosaic-width';
@@ -151,7 +151,7 @@ export default function ChatPageClient({
       setMyBusinessCount(getMyBusinessIds().length);
       getAdminAgents()
         .then(({ agents }) => {
-          const id = normalizeBusinessId(businessId);
+          const id = businessId.trim();
           const prefix = id + '--';
           setAgentsInThisBusiness(agents.filter((key) => key.startsWith(prefix)).length);
         })

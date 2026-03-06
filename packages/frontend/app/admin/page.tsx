@@ -58,7 +58,7 @@ export default function AdminPage() {
                     className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/20"
                   >
                     <option value="">Select business</option>
-                    {businessIds.map((id) => (
+                    {businessIds.filter((id) => id != null && String(id).trim() !== '').map((id) => (
                       <option key={id} value={id} className="bg-[#14151c] text-white">
                         {id}
                       </option>

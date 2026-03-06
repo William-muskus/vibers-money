@@ -65,7 +65,7 @@ function write(ids: string[]): void {
 }
 
 export function getMyBusinessIds(): string[] {
-  return read();
+  return read().filter((id) => typeof id === 'string' && id.trim() !== '');
 }
 
 export function addMyBusinessId(businessId: string): void {

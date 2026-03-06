@@ -42,6 +42,14 @@ const USE_AWS_BEDROCK = process.env.USE_AWS_BEDROCK === '1' || process.env.USE_A
 const BEDROCK_GATEWAY_URL = process.env.BEDROCK_GATEWAY_URL || '';
 const BEDROCK_GATEWAY_API_KEY = process.env.BEDROCK_GATEWAY_API_KEY || '';
 
+const LOCAL_LLM_API_BASE = (process.env.LOCAL_LLM_API_BASE ?? '').trim();
+const LOCAL_LLM_MODEL = (process.env.LOCAL_LLM_MODEL ?? 'mistral:7b').trim();
+const USE_LOCAL_LLM = LOCAL_LLM_API_BASE.length > 0;
+
+if (USE_LOCAL_LLM) {
+  logger.info('local_llm_enabled', { api_base: LOCAL_LLM_API_BASE, model: LOCAL_LLM_MODEL });
+}
+
 const BUSINESSES_DIR = join(WORKSPACE_ROOT, 'businesses');
 const AGENT_TEMPLATES_DIR = join(WORKSPACE_ROOT, 'agent-templates');
 
@@ -188,9 +196,11 @@ export async function provisionAgent(
   const devRoles = ['product-director', 'cto', 'security-director'];
   const isDevRole = devRoles.includes(role);
   const useBedrock = USE_AWS_BEDROCK && BEDROCK_GATEWAY_URL.length > 0;
-  const activeModel = useBedrock
-    ? (isDevRole ? 'mistral-large-bedrock' : 'mistral-small-bedrock')
-    : (isDevRole ? 'labs-devstral-small-2512' : 'mistral-small');
+  const activeModel = USE_LOCAL_LLM
+    ? 'local'
+    : useBedrock
+      ? (isDevRole ? 'mistral-large-bedrock' : 'mistral-small-bedrock')
+      : (isDevRole ? 'labs-devstral-small-2512' : 'mistral-small');
   const configPath = join(AGENT_TEMPLATES_DIR, 'config.toml.hbs');
   const configToml = await renderTemplate(configPath, {
     business_id: businessId,
@@ -198,6 +208,10 @@ export async function provisionAgent(
     agent_role: role,
     is_ceo: role === 'ceo',
     active_model: activeModel,
+    use_local: USE_LOCAL_LLM,
+    local_api_base: LOCAL_LLM_API_BASE.replace(/\/$/, ''),
+    local_model_name: LOCAL_LLM_MODEL,
+    local_model_alias: 'local',
     use_bedrock: useBedrock,
     bedrock_gateway_url: BEDROCK_GATEWAY_URL.replace(/\/$/, ''),
     swarm_bus_url: SWARM_BUS_URL + '/mcp',
@@ -314,10 +328,11 @@ export async function createBusinessAndSpawnCEO(
     : 'You are the CEO. Read your AGENTS.md and begin your work. Check your messages and todos.';
 
   const useBedrock = USE_AWS_BEDROCK && BEDROCK_GATEWAY_URL.length > 0;
+  const useLocal = USE_LOCAL_LLM;
   const process = new AgentProcess('ceo', businessId, {
     workdir,
     vibeHome,
-    apiKey: useBedrock ? undefined : (MISTRAL_API_KEY || undefined),
+    apiKey: (useLocal || useBedrock) ? undefined : (MISTRAL_API_KEY || undefined),
     bedrockGatewayApiKey: useBedrock ? (BEDROCK_GATEWAY_API_KEY || undefined) : undefined,
     initialPrompt,
   });
@@ -353,6 +368,7 @@ export async function spawnAgent(body: {
   });
 
   const useBedrock = USE_AWS_BEDROCK && BEDROCK_GATEWAY_URL.length > 0;
+  const useLocal = USE_LOCAL_LLM;
   const agentId = `${businessId}--${role}`;
   const parentRolePart = parent_agent_id ? parent_agent_id.replace(/^[^--]+--/, '') : '';
   const roleType: 'ceo' | 'department_manager' | 'specialist' =
@@ -379,7 +395,7 @@ export async function spawnAgent(body: {
   const process = new AgentProcess(role, businessId, {
     workdir,
     vibeHome,
-    apiKey: useBedrock ? undefined : (MISTRAL_API_KEY || undefined),
+    apiKey: (useLocal || useBedrock) ? undefined : (MISTRAL_API_KEY || undefined),
     bedrockGatewayApiKey: useBedrock ? (BEDROCK_GATEWAY_API_KEY || undefined) : undefined,
     lifecycle,
     initialPrompt,
