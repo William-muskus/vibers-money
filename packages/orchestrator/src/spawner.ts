@@ -10,6 +10,7 @@ import Handlebars from 'handlebars';
 import { AgentProcess } from './agent-process.js';
 import { registerAgent } from './registry.js';
 import { logger } from './logger.js';
+import { captureException } from './sentry.js';
 
 // Default to repo root when running from packages/orchestrator/dist (dist is three levels below repo root)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -335,9 +336,13 @@ export async function createBusinessAndSpawnCEO(
     apiKey: (useLocal || useBedrock) ? undefined : (MISTRAL_API_KEY || undefined),
     bedrockGatewayApiKey: useBedrock ? (BEDROCK_GATEWAY_API_KEY || undefined) : undefined,
     initialPrompt,
+    onCircuitBreak: notifyCircuitBreak,
   });
   registerAgent(process);
-  process.start().catch((err) => logger.error('agent_start_error', { key: process.key, error: String((err as Error).message) }));
+  process.start().catch((err) => {
+    logger.error('agent_start_error', { key: process.key, error: String((err as Error).message) });
+    captureException(err, { key: process.key, businessId });
+  });
 
   return { businessId, agentKey: process.key };
 }
@@ -399,10 +404,14 @@ export async function spawnAgent(body: {
     bedrockGatewayApiKey: useBedrock ? (BEDROCK_GATEWAY_API_KEY || undefined) : undefined,
     lifecycle,
     initialPrompt,
+    onCircuitBreak: notifyCircuitBreak,
   });
   registerAgent(process);
   if (lifecycle === 'infinite_loop') {
-    process.start().catch((err) => logger.error('agent_start_error', { key: process.key, error: String((err as Error).message) }));
+    process.start().catch((err) => {
+      logger.error('agent_start_error', { key: process.key, error: String((err as Error).message) });
+      captureException(err, { key: process.key, businessId });
+    });
   }
 
   await fetchWithTimeout(`${SWARM_BUS_URL}/api/inject`, {
@@ -418,6 +427,21 @@ export async function spawnAgent(body: {
   }).catch((err) => logger.warn('ceo_notify_failed', { agentId, error: String(err) }));
 
   return { agent_key: process.key };
+}
+
+/** Notify CEO via Swarm Bus when an agent enters circuit-break (e.g. after 5 consecutive crashes). */
+async function notifyCircuitBreak(businessId: string, _agentKey: string, role: string, failureCount: number): Promise<void> {
+  await fetchWithTimeout(`${SWARM_BUS_URL}/api/inject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      business_id: businessId,
+      target_role: 'ceo',
+      event_type: 'agent_circuit_break',
+      content: `Agent "${role}" is in circuit-break after ${failureCount} consecutive failures. You can resume it from the dashboard if needed.`,
+    }),
+    timeoutMs: 10_000,
+  }).catch((err) => logger.warn('notifyCircuitBreak_failed', { businessId, role, error: String(err) }));
 }
 
 /** Send founder message to CEO via Swarm Bus inject. */

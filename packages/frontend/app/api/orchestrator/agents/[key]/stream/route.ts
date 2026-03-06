@@ -1,17 +1,24 @@
 /**
  * SSE stream proxy — per-agent stream from orchestrator (avoids CORS).
  */
-const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
+import { getFounderIdFromRequest } from '@/lib/auth-server';
+
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ key: string }> },
 ) {
+  const founderId = await getFounderIdFromRequest(req);
+  if (!founderId) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
   const { key } = await context.params;
-  const url = `${ORCHESTRATOR_URL}/api/agents/${encodeURIComponent(key)}/stream`;
+  const url = new URL(`${ORCHESTRATOR_URL}/api/agents/${encodeURIComponent(key)}/stream`);
+  url.searchParams.set('session_id', founderId);
 
-  const res = await fetch(url, {
-    headers: { Accept: 'text/event-stream' },
+  const res = await fetch(url.toString(), {
+    headers: { Accept: 'text/event-stream', 'X-Founder-Session-Id': founderId },
     cache: 'no-store',
   });
 

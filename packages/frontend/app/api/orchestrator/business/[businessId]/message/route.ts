@@ -1,10 +1,16 @@
-const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
+import { getFounderIdFromRequest } from '@/lib/auth-server';
+
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 const PROXY_MESSAGE_TIMEOUT_MS = 25_000;
 
 export async function POST(
   req: Request,
   context: { params: Promise<{ businessId: string }> },
 ) {
+  const founderId = await getFounderIdFromRequest(req);
+  if (!founderId) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
   const { businessId } = await context.params;
   const body = await req.json().catch(() => ({}));
   const controller = new AbortController();
@@ -12,7 +18,7 @@ export async function POST(
   try {
     const res = await fetch(`${ORCHESTRATOR_URL}/api/business/${businessId}/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Founder-Session-Id': founderId },
       body: JSON.stringify(body),
       signal: controller.signal,
     });

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getConnectAccountId, setConnectAccountId } from '@/lib/stripe-connect-store';
+import { getFounderIdFromRequest } from '@/lib/auth-server';
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = secretKey ? new Stripe(secretKey) : null;
 const FRONTEND_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 
 export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const founderId = await getFounderIdFromRequest(req, body);
+  if (!founderId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   if (!stripe) {
     return NextResponse.json(
       { error: 'Stripe is not configured. Set STRIPE_SECRET_KEY in .env.' },
@@ -14,17 +21,23 @@ export async function POST(req: NextRequest) {
     );
   }
   try {
-    const body = await req.json().catch(() => ({}));
     const businessId = body.business_id ?? body.businessId;
     if (!businessId || typeof businessId !== 'string') {
       return NextResponse.json({ error: 'business_id required' }, { status: 400 });
     }
     const id = businessId.trim().replace(/\s+/g, '-');
+    const canAccessRes = await fetch(
+      `${ORCHESTRATOR_URL}/api/business/${encodeURIComponent(id)}/can-access?session_id=${encodeURIComponent(founderId)}`,
+      { headers: { 'X-Founder-Session-Id': founderId }, cache: 'no-store' },
+    );
+    const canAccessData = (await canAccessRes.json().catch(() => ({}))) as { allowed?: boolean };
+    if (!canAccessData.allowed) {
+      return NextResponse.json({ error: 'You do not own this business' }, { status: 403 });
+    }
     let accountId = await getConnectAccountId(id);
     if (!accountId) {
       const account = await stripe.accounts.create({
         type: 'express',
-        country: 'US',
         capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
         business_profile: {
           product_description: `vibers.money business: ${id}`,

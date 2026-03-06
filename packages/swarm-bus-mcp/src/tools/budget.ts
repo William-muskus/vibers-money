@@ -21,7 +21,7 @@ export function createBudgetTools() {
       inputSchema: { amount: z.number(), justification: z.string(), category: z.string().optional() },
       handler: async (args: { amount: number; justification: string }) => {
         const { agentId, businessId } = getIdentity();
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from?.parent) throw new Error('No parent');
         const rid = `budget-${uuidv4()}`;
         requests.set(rid, { from_agent_id: agentId });
@@ -37,7 +37,7 @@ export function createBudgetTools() {
           timestamp: new Date().toISOString(),
           read: false,
         };
-        addToInbox(from.parent, msg);
+        await addToInbox(from.parent, msg);
         scheduleWake(from.parent);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ request_id: rid, status: 'pending' }) }] };
       },
@@ -49,7 +49,7 @@ export function createBudgetTools() {
         const { agentId } = getIdentity();
         const r = requests.get(args.request_id);
         if (!r) throw new Error('Request not found');
-        const requester = getAgent(r.from_agent_id);
+        const requester = await getAgent(r.from_agent_id);
         if (!requester || requester.parent !== agentId) {
           throw new Error('Only the parent of the requester can approve this budget request');
         }
@@ -58,19 +58,20 @@ export function createBudgetTools() {
           const b = budgets.get(r.from_agent_id) ?? { allocated: 0, spent: 0 };
           budgets.set(r.from_agent_id, { ...b, allocated: b.allocated + args.approved_amount });
         }
+        const me = await getAgent(agentId);
         const msg: Message = {
           id: `msg-${uuidv4()}`,
           type: 'budget_response',
           from_agent_id: agentId,
-          from_role: getAgent(agentId)!.role,
+          from_role: me!.role,
           to_agent_id: r.from_agent_id,
-          business_id: getAgent(agentId)!.business_id,
+          business_id: me!.business_id,
           content: JSON.stringify({ approved_amount: args.approved_amount }),
           priority: 'normal',
           timestamp: new Date().toISOString(),
           read: false,
         };
-        addToInbox(r.from_agent_id, msg);
+        await addToInbox(r.from_agent_id, msg);
         scheduleWake(r.from_agent_id);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ approved: args.approved_amount }) }] };
       },

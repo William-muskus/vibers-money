@@ -56,7 +56,7 @@ export default function SwarmFeed({ businessId }: { businessId?: string }) {
   useEffect(() => {
     const unsubscribe = subscribeStream(swarmFeedStreamUrl(), (event) => {
       if (event.type === 'info') setConnected(true);
-      else setEvents((prev) => [...prev.slice(-(maxEvents - 1)), event as BusEvent]);
+      else setEvents((prev) => [...prev.slice(-(maxEvents - 1)), event as unknown as BusEvent]);
     }, { onDisconnect: () => setConnected(false), onConnectionFailed: () => setConnected(false) });
     return unsubscribe;
   }, []);

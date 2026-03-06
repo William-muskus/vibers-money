@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { createBusiness } from '@/lib/api';
 import { addMyBusinessId } from '@/lib/local-businesses';
 import ChatSidebar from '@/components/chat/ChatSidebar';
@@ -10,6 +12,7 @@ import AgentTileMosaic from '@/components/background/AgentTileMosaic';
 
 export default function Home() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,6 +35,15 @@ export default function Home() {
     }
   }
 
+  if (status === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0c0c12]">
+        <p className="text-white/70">Loading…</p>
+      </div>
+    );
+  }
+
+  // Seamless flow: launcher for everyone (no login required). Account is created/linked when user funds via Stripe.
   return (
     <div className="relative flex h-screen w-full overflow-hidden">
       <AgentTileMosaic />
@@ -61,6 +73,11 @@ export default function Home() {
                 className="mx-auto"
               />
             </div>
+            {status !== 'authenticated' && (
+              <p className="animate-fade-in-up text-sm text-white/60 delay-3">
+                <Link href="/login" className="underline hover:text-white/80">Sign in</Link> to save your businesses across devices. No account needed until you fund via Stripe.
+              </p>
+            )}
           </div>
         </div>
       </main>

@@ -8,7 +8,7 @@ import BudgetBars from '@/components/finance/BudgetBars';
 import TransactionFeed from '@/components/finance/TransactionFeed';
 import PLSummary from '@/components/finance/PLSummary';
 import { canAccessBusiness, canAccessBusinessAsync } from '@/lib/local-businesses';
-import { getStripeConnectStatus, startStripeConnectOnboarding } from '@/lib/api';
+import { getStripeConnectStatus, getStripeConnectBalance, getBusinessUsage, startStripeConnectOnboarding } from '@/lib/api';
 
 type Budget = { role: string; allocated: number; spent: number };
 type Tx = { id: string; amount: number; description: string; timestamp: string };
@@ -62,6 +62,7 @@ export default function FinancePageClient({ businessId }: { businessId: string }
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [connectStatus, setConnectStatus] = useState<{ hasAccount: boolean; chargesEnabled: boolean; detailsSubmitted: boolean } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
+  const [usage, setUsage] = useState<{ tokensUsed: number; lastUpdated: string | null }>({ tokensUsed: 0, lastUpdated: null });
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -97,6 +98,21 @@ export default function FinancePageClient({ businessId }: { businessId: string }
     if (!businessId) return;
     getStripeConnectStatus(businessId).then(setConnectStatus).catch(() => setConnectStatus(null));
   }, [businessId, searchParams.get('stripe')]);
+
+  useEffect(() => {
+    if (!businessId || !connectStatus?.hasAccount) return;
+    getStripeConnectBalance(businessId)
+      .then((data) => {
+        setWalletBalance(data.available + data.pending);
+        setTransactions(data.transactions ?? []);
+      })
+      .catch(() => {});
+  }, [businessId, connectStatus?.hasAccount, searchParams.get('stripe')]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    getBusinessUsage(businessId).then(setUsage).catch(() => setUsage({ tokensUsed: 0, lastUpdated: null }));
+  }, [businessId]);
 
   const totalAllocated = budgets.reduce((s, b) => s + b.allocated, 0);
   const totalSpent = budgets.reduce((s, b) => s + b.spent, 0);
@@ -148,6 +164,11 @@ export default function FinancePageClient({ businessId }: { businessId: string }
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <WalletBalance balance={walletBalance} />
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">AI usage (tokens)</h3>
+              <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{usage.tokensUsed.toLocaleString()}</p>
+              <p className="mt-0.5 text-xs text-gray-500">Tracked when using cloud inference (Mistral/Bedrock). Local LLM: not tracked.</p>
+            </div>
             <PayoutsCard
               businessId={businessId}
               connectStatus={connectStatus}

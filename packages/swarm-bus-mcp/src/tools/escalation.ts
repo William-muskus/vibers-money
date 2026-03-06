@@ -19,7 +19,7 @@ export function createEscalationTools() {
       },
       handler: async (args: { question: string; options: string[]; context: string }) => {
         const { agentId, businessId } = getIdentity();
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from?.parent) throw new Error('No parent');
         const id = `esc-${uuidv4()}`;
         pending.set(id, { from_agent_id: agentId });
@@ -35,7 +35,7 @@ export function createEscalationTools() {
           timestamp: new Date().toISOString(),
           read: false,
         };
-        addToInbox(from.parent, msg);
+        await addToInbox(from.parent, msg);
         scheduleWake(from.parent);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ escalation_id: id, status: 'pending' }) }] };
       },
@@ -47,16 +47,17 @@ export function createEscalationTools() {
         const { agentId, businessId } = getIdentity();
         const esc = pending.get(args.escalation_id);
         if (!esc) throw new Error('Escalation not found');
-        const originator = getAgent(esc.from_agent_id);
+        const originator = await getAgent(esc.from_agent_id);
         if (!originator || originator.parent !== agentId) {
           throw new Error('Only the parent of the escalating agent can respond to this escalation');
         }
         pending.delete(args.escalation_id);
+        const me = await getAgent(agentId);
         const msg: Message = {
           id: `msg-${uuidv4()}`,
           type: 'escalation_response',
           from_agent_id: agentId,
-          from_role: getAgent(agentId)!.role,
+          from_role: me!.role,
           to_agent_id: esc.from_agent_id,
           business_id: businessId,
           content: JSON.stringify({ decision: args.decision }),
@@ -64,7 +65,7 @@ export function createEscalationTools() {
           timestamp: new Date().toISOString(),
           read: false,
         };
-        addToInbox(esc.from_agent_id, msg);
+        await addToInbox(esc.from_agent_id, msg);
         scheduleWake(esc.from_agent_id);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ delivered: true }) }] };
       },

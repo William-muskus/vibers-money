@@ -7,9 +7,10 @@ export default function QRCodeDisplay({ url, size = 160 }: { url: string; size?:
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (!url || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    if (!url || !canvas) return;
     import('qrcode').then((QRCode) => {
-      QRCode.toCanvas(canvasRef.current, url, { width: size, margin: 2 }, (err) => {
+      QRCode.toCanvas(canvas, url, { width: size, margin: 2 }, (err) => {
         if (err) setError(true);
       });
     }).catch(() => setError(true));

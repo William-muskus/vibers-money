@@ -101,7 +101,7 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
 
   useEffect(() => {
     const unsubscribe = subscribeStream(adminStreamUrl(), (event: StreamEvent) => {
-      if (event.agent) {
+      if ('agent' in event && event.agent) {
         if (businessId && !event.agent.startsWith(prefix(businessId))) return;
         setAllAgentKeys((prev) => (prev.includes(event.agent!) ? prev : [...prev, event.agent!]));
       }

@@ -9,7 +9,7 @@ import { scheduleWake } from '../core/wake.js';
 import type { Message } from '../types.js';
 import { logger } from '../logger.js';
 
-export function handleInject(req: Request, res: Response): void {
+export async function handleInject(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const business_id = body.business_id as string;
   const target_role = body.target_role as string;
@@ -23,7 +23,7 @@ export function handleInject(req: Request, res: Response): void {
     return;
   }
 
-  const to_agent_id = resolveRole(business_id, target_role);
+  const to_agent_id = await resolveRole(business_id, target_role);
   if (!to_agent_id) {
     logger.warn('inject_target_not_found', { business_id, target_role });
     res.status(404).json({ error: `No agent found for business ${business_id} and role ${target_role}` });
@@ -44,7 +44,7 @@ export function handleInject(req: Request, res: Response): void {
     read: false,
     metadata: { event_type, ...metadata },
   };
-  addToInbox(to_agent_id, msg);
+  await addToInbox(to_agent_id, msg);
   scheduleWake(to_agent_id);
   logger.debug('inject_delivered', { message_id: msg.id, to_agent_id });
   res.status(200).json({ ok: true, message_id: msg.id, to: target_role });

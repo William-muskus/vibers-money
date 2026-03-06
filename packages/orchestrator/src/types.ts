@@ -14,6 +14,8 @@ export interface AgentConfig {
   initialPrompt?: string;
   /** When 'task_based', start() runs one cycle then returns; wake webhook triggers another run. */
   lifecycle?: 'infinite_loop' | 'task_based';
+  /** Called when agent enters circuit-break after max consecutive failures. Used to notify CEO via swarm bus. */
+  onCircuitBreak?: (businessId: string, agentKey: string, role: string, failureCount: number) => void | Promise<void>;
 }
 
 export interface BusinessConfig {
@@ -34,7 +36,7 @@ export interface NDJSONMessage {
 
 /** SSE event sent to clients. */
 export interface StreamEvent {
-  type: 'activity' | 'mode_switch' | 'raw' | 'error' | 'screencast_frame' | 'ask_user';
+  type: 'activity' | 'mode_switch' | 'raw' | 'error' | 'screencast_frame' | 'ask_user' | 'lifecycle';
   msg?: NDJSONMessage;
   data?: string;
   mode?: 'terminal' | 'browser';
@@ -42,6 +44,8 @@ export interface StreamEvent {
   /** Structured question from ask_user_question tool. */
   questions?: AskUserQuestion[];
   agent: string;
+  /** For type 'lifecycle': progress stage during cold start. */
+  stage?: 'agent_spawning' | 'agent_tools_loaded' | 'agent_thinking';
 }
 
 export interface AskUserQuestion {

@@ -101,7 +101,7 @@ export default function SwarmGraph({ businessId }: { businessId?: string }) {
             if (!event.active) simulation.alphaTarget(0);
             d.fx = null;
             d.fy = null;
-          }),
+          }) as any,
       );
 
     node

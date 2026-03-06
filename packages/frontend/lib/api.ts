@@ -1,20 +1,19 @@
-import { getOrCreateFounderSessionId } from './session-id';
 import { acquire, fetchWithRateLimitAndRetry } from './rate-limit';
+import { getOrCreateFounderSessionId } from './session-id';
 
-// Use same-origin proxy to avoid CORS (EventSource blocks cross-origin in some browsers)
-const ORCHESTRATOR_API = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL
-  ? `${process.env.NEXT_PUBLIC_ORCHESTRATOR_URL}/api`
-  : '/api/orchestrator';
+// Same-origin proxy: sends cookies and X-Founder-Session-Id (auth user id or anonymous session from cache).
+const ORCHESTRATOR_API = '/api/orchestrator';
 
-/**
- * Business slug is derived on the backend from the business idea (concept summary, not first 5 words).
- * The frontend only sends the idea (name); the orchestrator returns the chosen businessId.
- */
-
+/** Seamless flow: anonymous session id from cache so app works without login until user funds via Stripe. */
 function founderHeaders(): Record<string, string> {
-  const id = getOrCreateFounderSessionId();
+  const id = typeof window === 'undefined' ? '' : getOrCreateFounderSessionId();
   return id ? { 'X-Founder-Session-Id': id } : {};
 }
+
+/**
+ * Business slug is derived on the backend from the business idea (concept summary).
+ * Seamless auth: no sign-up required; account is created/linked when user funds via Stripe (payer email).
+ */
 
 const CREATE_BUSINESS_TIMEOUT_MS = 90_000;
 const SEND_MESSAGE_TIMEOUT_MS = 25_000;
@@ -29,7 +28,6 @@ export async function createBusiness(name: string, founderPrompt?: string): Prom
         body: JSON.stringify({
           name,
           founder_prompt: founderPrompt || name,
-          founder_session_id: getOrCreateFounderSessionId(),
         }),
       },
       { timeoutMs: CREATE_BUSINESS_TIMEOUT_MS },
@@ -74,22 +72,22 @@ export async function sendMessage(businessId: string, content: string): Promise<
 export function businessStreamUrl(businessId: string): string {
   const id = businessId.trim();
   const base = `${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/stream`;
-  const sessionId = getOrCreateFounderSessionId();
-  return sessionId ? `${base}?session_id=${encodeURIComponent(sessionId)}` : base;
+  const sid = typeof window === 'undefined' ? '' : getOrCreateFounderSessionId();
+  return sid ? `${base}?session_id=${encodeURIComponent(sid)}` : base;
 }
 
 /** CEO-only stream for founder chat (no other agents). */
 export function ceoStreamUrl(businessId: string): string {
   const id = businessId.trim();
   const base = `${ORCHESTRATOR_API}/agents/${encodeURIComponent(id)}--ceo/stream`;
-  const sessionId = getOrCreateFounderSessionId();
-  return sessionId ? `${base}?session_id=${encodeURIComponent(sessionId)}` : base;
+  const sid = typeof window === 'undefined' ? '' : getOrCreateFounderSessionId();
+  return sid ? `${base}?session_id=${encodeURIComponent(sid)}` : base;
 }
 
 export async function getBusinessStatus(businessId: string): Promise<{ paused: boolean }> {
   await acquire();
   const id = businessId.trim();
-  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/status`, { headers: founderHeaders() });
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/status`, { credentials: 'include', headers: founderHeaders() });
   if (!res.ok) return { paused: false };
   return res.json();
 }
@@ -97,14 +95,14 @@ export async function getBusinessStatus(businessId: string): Promise<{ paused: b
 export async function pauseBusiness(businessId: string): Promise<void> {
   await acquire();
   const id = businessId.trim();
-  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/pause`, { method: 'POST', headers: founderHeaders() });
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/pause`, { method: 'POST', credentials: 'include', headers: founderHeaders() });
   if (!res.ok) throw new Error('Failed to pause');
 }
 
 export async function resumeBusiness(businessId: string): Promise<void> {
   await acquire();
   const id = businessId.trim();
-  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/resume`, { method: 'POST', headers: founderHeaders() });
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/resume`, { method: 'POST', credentials: 'include', headers: founderHeaders() });
   if (!res.ok) throw new Error('Failed to resume');
 }
 
@@ -113,7 +111,7 @@ export type TreeEntry = { name: string; kind: 'dir' | 'file'; children?: TreeEnt
 export async function getBusinessTree(businessId: string): Promise<TreeEntry[]> {
   await acquire();
   const id = businessId.trim();
-  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/tree`, { headers: founderHeaders() });
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/tree`, { credentials: 'include', headers: founderHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((err as { error?: string }).error || 'Failed to load tree');
@@ -125,15 +123,13 @@ export async function getBusinessTree(businessId: string): Promise<TreeEntry[]> 
 const CAN_ACCESS_TIMEOUT_MS = 8000;
 
 export async function canAccessBusinessFromBackend(businessId: string): Promise<boolean> {
-  const sessionId = getOrCreateFounderSessionId();
-  if (!sessionId) return false;
   await acquire();
-  const q = new URLSearchParams({ session_id: sessionId });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CAN_ACCESS_TIMEOUT_MS);
   try {
     const id = businessId.trim();
-    const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/can-access?${q}`, {
+    const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/can-access`, {
+      credentials: 'include',
       headers: founderHeaders(),
       signal: controller.signal,
     });
@@ -147,6 +143,14 @@ export async function canAccessBusinessFromBackend(businessId: string): Promise<
   }
 }
 
+/** Get per-business API/token usage for cost dashboard. */
+export async function getBusinessUsage(businessId: string): Promise<{ tokensUsed: number; lastUpdated: string | null }> {
+  const id = businessId.trim();
+  const res = await fetch(`${ORCHESTRATOR_API}/business/${encodeURIComponent(id)}/usage`, { credentials: 'include', headers: founderHeaders() });
+  if (!res.ok) return { tokensUsed: 0, lastUpdated: null };
+  return res.json();
+}
+
 /** Stripe Connect: get whether this business has payouts set up (their own Stripe Express account). */
 export async function getStripeConnectStatus(businessId: string): Promise<{
   hasAccount: boolean;
@@ -154,8 +158,20 @@ export async function getStripeConnectStatus(businessId: string): Promise<{
   detailsSubmitted: boolean;
 }> {
   const id = businessId.trim();
-  const res = await fetch(`/api/stripe/connect/status?business_id=${encodeURIComponent(id)}`);
+  const res = await fetch(`/api/stripe/connect/status?business_id=${encodeURIComponent(id)}`, { credentials: 'include' });
   if (!res.ok) return { hasAccount: false, chargesEnabled: false, detailsSubmitted: false };
+  return res.json();
+}
+
+/** Stripe Connect: get balance and recent transactions for a connected account. */
+export async function getStripeConnectBalance(businessId: string): Promise<{
+  available: number;
+  pending: number;
+  transactions: Array<{ id: string; amount: number; description: string; timestamp: string }>;
+}> {
+  const id = businessId.trim();
+  const res = await fetch(`/api/stripe/connect/balance?business_id=${encodeURIComponent(id)}`, { credentials: 'include', headers: founderHeaders() });
+  if (!res.ok) return { available: 0, pending: 0, transactions: [] };
   return res.json();
 }
 
@@ -164,7 +180,7 @@ export async function startStripeConnectOnboarding(businessId: string): Promise<
   const id = businessId.trim();
   const res = await fetch('/api/stripe/connect/onboard', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...founderHeaders() },
     body: JSON.stringify({ business_id: id }),
   });
   if (!res.ok) {
@@ -179,13 +195,14 @@ export async function startStripeConnectOnboarding(businessId: string): Promise<
 /** Create Stripe checkout session for funding a business; redirect to returned url. */
 export async function createCheckoutSession(businessId: string, options?: { amount_cents?: number }): Promise<{ url: string | null }> {
   const id = businessId.trim();
+  const sid = typeof window === 'undefined' ? '' : getOrCreateFounderSessionId();
   const res = await fetch('/api/stripe/checkout', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...founderHeaders() },
     body: JSON.stringify({
       business_id: id,
-      founder_session_id: getOrCreateFounderSessionId(),
       amount_cents: options?.amount_cents ?? 499,
+      ...(sid && { founder_session_id: sid }),
     }),
   });
   if (!res.ok) {

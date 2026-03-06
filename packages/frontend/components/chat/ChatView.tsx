@@ -89,6 +89,7 @@ export default function ChatView({
   const [sending, setSending] = useState(false);
   const [waitingForReply, setWaitingForReply] = useState(false);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
+  const [progressStage, setProgressStage] = useState<'agent_spawning' | 'agent_tools_loaded' | 'agent_thinking' | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionFailed, setConnectionFailed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -145,6 +146,14 @@ export default function ChatView({
           console.debug('[stream]', event.type, event.type === 'activity' ? (event as { msg?: { role?: string; content?: unknown } }).msg?.role : '', (event as { msg?: { content?: unknown } }).msg?.content ? String((event as { msg?: { content?: unknown } }).msg?.content).slice(0, 80) : '');
         }
 
+        if (event.type === 'lifecycle') {
+          const stage = (event as { stage?: string }).stage;
+          if (stage === 'agent_spawning' || stage === 'agent_tools_loaded' || stage === 'agent_thinking') {
+            setProgressStage(stage);
+          }
+          return;
+        }
+
         if (event.type === 'ask_user') {
           const questions = (event as { questions?: AskUserQuestion[] }).questions;
           if (questions && questions.length > 0) {
@@ -194,6 +203,7 @@ export default function ChatView({
 
         setWaitingForReply(false);
         setShowTypingIndicator(false);
+        setProgressStage(null);
         if (typingTimeoutRef.current) {
           clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = null;
@@ -302,9 +312,16 @@ export default function ChatView({
                   <h2 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
                     What business we launching today?
                   </h2>
-                  {!connected && (
+                  {!connected && !progressStage && (
                     <p className="animate-soft-pulse text-sm text-gray-500 dark:text-gray-400">
                       Connecting to CEO...
+                    </p>
+                  )}
+                  {progressStage && (
+                    <p className="animate-soft-pulse text-sm text-indigo-600 dark:text-indigo-400">
+                      {progressStage === 'agent_spawning' && 'Starting CEO agent...'}
+                      {progressStage === 'agent_tools_loaded' && 'Loading tools...'}
+                      {progressStage === 'agent_thinking' && 'Thinking about your business...'}
                     </p>
                   )}
                 </div>
@@ -321,12 +338,23 @@ export default function ChatView({
                     <MessageBubble key={m.id ?? `msg-${i}`} role={m.role} content={m.content} />
                   ),
                 )}
+                {progressStage && !messages.some((m) => m.kind === 'text' && m.role === 'assistant') && (
+                  <div className="flex w-full justify-end">
+                    <div className="rounded-2xl rounded-br-md border border-indigo-200/80 bg-indigo-50/90 px-4 py-3 shadow-sm dark:border-indigo-400/25 dark:bg-indigo-950/60">
+                      <span className="text-sm font-medium text-indigo-700 dark:text-indigo-200">
+                        {progressStage === 'agent_spawning' && 'Starting CEO agent...'}
+                        {progressStage === 'agent_tools_loaded' && 'Loading tools...'}
+                        {progressStage === 'agent_thinking' && 'Thinking about your business...'}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {(sending || waitingForReply) && (
                   <div className="flex w-full justify-end">
                     <div className="flex items-start gap-3 animate-fade-in">
                       <div className="rounded-2xl rounded-br-md border border-indigo-200/80 bg-indigo-50/90 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-indigo-400/25 dark:bg-indigo-950/60">
                         <span className="text-sm font-medium text-indigo-700 dark:text-indigo-200">
-                          {showTypingIndicator ? 'Typing...' : 'Thinking...'}
+                          {progressStage ? (progressStage === 'agent_thinking' ? 'Thinking...' : progressStage === 'agent_spawning' ? 'Starting...' : 'Loading...') : showTypingIndicator ? 'Typing...' : 'Thinking...'}
                         </span>
                       </div>
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 dark:bg-indigo-400/25 ring-2 ring-indigo-400/30 dark:ring-indigo-300/30">

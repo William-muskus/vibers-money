@@ -3,6 +3,7 @@
  * Load .env first so spawner (and others) see LOCAL_LLM_API_BASE etc. when they load.
  */
 import './load-env.js';
+import './sentry.js';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import {
@@ -12,6 +13,7 @@ import {
   getBusinessIds,
 } from './registry.js';
 import { setBusinessFounder, canAccess as ownershipCanAccess } from './ownership.js';
+import { getUsage } from './usage-store.js';
 import {
   createBusinessAndSpawnCEO,
   spawnAgent,
@@ -27,10 +29,11 @@ function getProcessesForBusiness(id: string): ReturnType<typeof getAgentsByBusin
   return getAgentsByBusiness(id.trim());
 }
 
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN?.trim() || undefined;
 const app = express();
 app.use(
   cors({
-    origin: '*',
+    origin: FRONTEND_ORIGIN ?? true,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-Founder-Session-Id'],
     exposedHeaders: ['Content-Type'],
@@ -60,7 +63,7 @@ function requireOwnershipIfSession(businessId: string, req: Request, res: Respon
 }
 
 function sseHeaders(res: Response): void {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN ?? '*');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -79,7 +82,7 @@ app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
   }
   if (!process) {
     logger.warn('stream_not_found', { key });
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN ?? '*');
     res.status(404).json({ error: 'Agent not found', key });
     return;
   }
@@ -94,7 +97,7 @@ app.get('/api/business/:id/stream', (req: Request, res: Response) => {
   if (!requireOwnershipIfSession(id, req, res)) return;
   const processes = getProcessesForBusiness(id);
   if (processes.length === 0) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN ?? '*');
     res.status(404).json({ error: 'Business not found or no agents', businessId });
     return;
   }
@@ -175,6 +178,18 @@ app.get('/api/business/:id/can-access', (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const allowed = !!sessionId && ownershipCanAccess(businessId, sessionId);
   res.json({ allowed });
+});
+
+/** GET /api/business/:id/usage — Per-business token/API usage for cost dashboard. */
+app.get('/api/business/:id/usage', (req: Request, res: Response) => {
+  const businessId = req.params.id?.trim();
+  if (!businessId) {
+    res.status(400).json({ error: 'business_id required' });
+    return;
+  }
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  const usage = getUsage(businessId);
+  res.json(usage);
 });
 
 /** POST /api/business/link-session — Link business to founder session (e.g. after Stripe). */

@@ -31,7 +31,7 @@ export function createSpawningTools() {
         lifecycle?: 'infinite_loop' | 'task_based';
       }) => {
         const { businessId, agentId } = getIdentity();
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from) throw new Error('Agent not registered');
         if (from.role_type !== 'ceo' && from.role_type !== 'department_manager') {
           throw new Error('Only CEO or department managers can spawn agents');

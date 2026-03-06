@@ -1,6 +1,7 @@
 {
   "name": "vibers-money",
   "version": "0.1.0",
+  "description": "Launch any business with a swarm of AI agents — CEO, directors, and specialists that run 24/7. Next.js, Mistral Vibe, Stripe.",
   "private": true,
   "workspaces": [
     "packages/*"

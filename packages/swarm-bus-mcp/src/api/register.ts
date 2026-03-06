@@ -12,7 +12,7 @@ import { logger } from '../logger.js';
 const roleTypeSchema = ['ceo', 'department_manager', 'specialist'] as const;
 const lifecycleSchema = ['infinite_loop', 'task_based'] as const;
 
-export function handleRegister(req: Request, res: Response): void {
+export async function handleRegister(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const agent_id = body.agent_id as string;
   const business_id = body.business_id as string;
@@ -49,22 +49,22 @@ export function handleRegister(req: Request, res: Response): void {
     wake_endpoint,
     wake_payload,
   };
-  regAgent(reg);
-  ensureInbox(agent_id);
+  await regAgent(reg);
+  await ensureInbox(agent_id);
   broadcastEvent({ type: 'agent_registered', agent_id: agent_id, business_id, role, role_type });
   logger.info('register_ok', { agent_id, business_id, role, role_type });
   res.status(200).json({ ok: true, agent_id });
 }
 
-export function handleDeregister(req: Request, res: Response): void {
+export async function handleDeregister(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const agent_id = body.agent_id as string;
   if (!agent_id) {
     res.status(400).json({ error: 'Missing agent_id' });
     return;
   }
-  clearInbox(agent_id);
-  deregAgent(agent_id);
+  await clearInbox(agent_id);
+  await deregAgent(agent_id);
   broadcastEvent({ type: 'agent_deregistered', agent_id });
   logger.info('deregister_ok', { agent_id });
   res.status(200).json({ ok: true });

@@ -12,18 +12,10 @@ export const viewport = {
 
 import './globals.css';
 import RegisterSW from '@/components/RegisterSW';
+import { SessionProvider } from '@/components/SessionProvider';
+import { ClaimPendingOnSignIn } from '@/components/ClaimPendingOnSignIn';
 
-export default async function RootLayout(props: {
-  children: React.ReactNode;
-  params?: Promise<Record<string, string | string[]>>;
-  searchParams?: Promise<Record<string, string | string[]>>;
-}) {
-  // Consume async params/searchParams so they are not enumerated by dev tools (Next.js 15)
-  await Promise.all([
-    props.params?.then(() => {}),
-    props.searchParams?.then(() => {}),
-  ].filter(Boolean));
-
+export default function RootLayout(props: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -36,8 +28,11 @@ export default async function RootLayout(props: {
         />
       </head>
       <body className="min-h-screen font-sans antialiased bg-[#0c0c12]" style={{ fontFamily: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif' }} suppressHydrationWarning>
-        {props.children}
-        <RegisterSW />
+        <SessionProvider>
+          <ClaimPendingOnSignIn />
+          {props.children}
+          <RegisterSW />
+        </SessionProvider>
       </body>
     </html>
   );

@@ -21,7 +21,7 @@ export function createSchedulingTools() {
         const { businessId } = getIdentity();
         const targetId = `${businessId}--${args.target_role}`;
         const id = `evt-${uuidv4()}`;
-        const timer = setInterval(() => {
+        const timer = setInterval(async () => {
           const msg: Message = {
             id: `msg-${uuidv4()}`,
             type: 'scheduled_event',
@@ -34,7 +34,7 @@ export function createSchedulingTools() {
             timestamp: new Date().toISOString(),
             read: false,
           };
-          addToInbox(targetId, msg);
+          await addToInbox(targetId, msg);
           scheduleWake(targetId);
         }, args.interval_seconds * 1000);
         events.set(id, { target_agent_id: targetId, business_id: businessId, message: args.message, timer });

@@ -191,40 +191,59 @@ app.get('/api/events', (req: Request, res: Response) => {
   addEventsSubscriber(res);
 });
 
-app.post('/api/register', handleRegister);
-app.post('/api/deregister', handleDeregister);
-app.post('/api/inject', handleInject);
-
-app.get('/api/graph', (req: Request, res: Response) => {
-  const businessId = req.query.business_id as string | undefined;
-  const agents = businessId ? getAgentsByBusiness(businessId) : getAllAgents();
-  const nodes = agents.map((a) => ({
-    id: a.agent_id,
-    role: a.role,
-    business_id: a.business_id,
-  }));
-  const edges = agents
-    .filter((a) => a.parent)
-    .map((a) => ({ from: a.parent!, to: a.agent_id }));
-  res.json({ nodes, edges });
+app.post('/api/register', (req, res, next) => {
+  handleRegister(req, res).catch(next);
+});
+app.post('/api/deregister', (req, res, next) => {
+  handleDeregister(req, res).catch(next);
+});
+app.post('/api/inject', (req, res, next) => {
+  handleInject(req, res).catch(next);
 });
 
-app.get('/api/budgets', (req: Request, res: Response) => {
-  const businessId = req.query.business_id as string | undefined;
-  if (!businessId) {
-    res.status(400).json({ error: 'business_id required' });
-    return;
+app.get('/api/graph', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string | undefined;
+    const agents = businessId ? await getAgentsByBusiness(businessId) : await getAllAgents();
+    const nodes = agents.map((a) => ({
+      id: a.agent_id,
+      role: a.role,
+      business_id: a.business_id,
+    }));
+    const edges = agents
+      .filter((a) => a.parent)
+      .map((a) => ({ from: a.parent!, to: a.agent_id }));
+    res.json({ nodes, edges });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
-  const agents = getAgentsByBusiness(businessId);
-  const budgetsList = agents.map((a) => {
-    const b = getBudget(a.agent_id) ?? { allocated: 0, spent: 0 };
-    return { role: a.role, allocated: b.allocated, spent: b.spent };
-  });
-  res.json({ budgets: budgetsList });
+});
+
+app.get('/api/budgets', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string | undefined;
+    if (!businessId) {
+      res.status(400).json({ error: 'business_id required' });
+      return;
+    }
+    const agents = await getAgentsByBusiness(businessId);
+    const budgetsList = agents.map((a) => {
+      const b = getBudget(a.agent_id) ?? { allocated: 0, spent: 0 };
+      return { role: a.role, allocated: b.allocated, spent: b.spent };
+    });
+    res.json({ budgets: budgetsList });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'swarm-bus-mcp' });
+});
+
+app.use((err: Error, _req: Request, res: Response, _next: () => void) => {
+  logger.error('request_error', { error: String(err?.message ?? err) });
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
 });
 
 const PORT = Number(process.env.SWARM_BUS_PORT) || 3100;

@@ -5,7 +5,8 @@ export type StreamEvent =
   | { type: 'ask_user'; questions?: unknown[] }
   | { type: 'screencast_frame'; frame?: string; agent?: string }
   | { type: 'raw'; data?: string; agent?: string }
-  | { type: 'error'; data?: string; agent?: string };
+  | { type: 'error'; data?: string; agent?: string }
+  | { type: 'lifecycle'; stage?: 'agent_spawning' | 'agent_tools_loaded' | 'agent_thinking'; agent?: string };
 
 const MIN_RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 30000;

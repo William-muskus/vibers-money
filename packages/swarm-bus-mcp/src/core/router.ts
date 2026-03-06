@@ -4,15 +4,19 @@
  */
 import { getAgent, resolveRole } from './registry.js';
 
-export function canSendTo(fromAgentId: string, toRole: string, businessId: string): { allowed: boolean; toAgentId?: string } {
-  const from = getAgent(fromAgentId);
+export async function canSendTo(
+  fromAgentId: string,
+  toRole: string,
+  businessId: string,
+): Promise<{ allowed: boolean; toAgentId?: string }> {
+  const from = await getAgent(fromAgentId);
   if (!from) return { allowed: false };
   if (from.business_id !== businessId) return { allowed: false };
 
-  const toAgentId = resolveRole(businessId, toRole);
+  const toAgentId = await resolveRole(businessId, toRole);
   if (!toAgentId) return { allowed: false };
 
-  const to = getAgent(toAgentId);
+  const to = await getAgent(toAgentId);
   if (!to) return { allowed: false };
 
   if (from.role_type === 'ceo') return { allowed: true, toAgentId };
@@ -28,7 +32,7 @@ export function canSendTo(fromAgentId: string, toRole: string, businessId: strin
   return { allowed: false };
 }
 
-export function isCEO(agentId: string): boolean {
-  const a = getAgent(agentId);
+export async function isCEO(agentId: string): Promise<boolean> {
+  const a = await getAgent(agentId);
   return a?.role_type === 'ceo';
 }

@@ -1,0 +1,38 @@
+# Run from repo root. Frontend: deploy separately (e.g. Vercel). This runs orchestrator + swarm-bus + Redis.
+# Build: docker compose build
+# Run:   docker compose up -d
+# Env:   set in .env or pass via docker compose --env-file .env
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
+
+  swarm-bus:
+    build:
+      context: .
+      dockerfile: packages/swarm-bus-mcp/Dockerfile
+    ports: ["3100:3100"]
+    environment:
+      SWARM_BUS_PORT: "3100"
+      REDIS_URL: "redis://redis:6379"
+    depends_on: [redis]
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: packages/orchestrator/Dockerfile
+    ports: ["3000:3000"]
+    environment:
+      SWARM_BUS_URL: "http://swarm-bus:3100"
+      REDIS_URL: "redis://redis:6379"
+      # Set MISTRAL_API_KEY or LOCAL_LLM_API_BASE for inference
+      # Set FRONTEND_ORIGIN to lock CORS (e.g. https://your-app.vercel.app)
+    volumes:
+      - businesses_data:/app/businesses
+    depends_on: [swarm-bus]
+
+volumes:
+  redis_data: {}
+  businesses_data: {}

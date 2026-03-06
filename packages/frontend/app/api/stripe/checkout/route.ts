@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getConnectAccountId } from '@/lib/stripe-connect-store';
+import { getFounderIdFromRequest } from '@/lib/auth-server';
 
 const secretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = secretKey ? new Stripe(secretKey) : null;
@@ -18,12 +19,14 @@ export async function POST(req: NextRequest) {
   }
   try {
     const body = await req.json();
-    const { business_id, founder_session_id, amount_cents = 499, success_url, cancel_url } = body;
+    const { business_id, amount_cents = 499, success_url, cancel_url } = body;
     if (!business_id) {
       return NextResponse.json({ error: 'business_id required' }, { status: 400 });
     }
+    // Seamless flow: no login required. Use auth session or client-provided anonymous session (from cache).
+    const founderSessionId = await getFounderIdFromRequest(req, body);
     const metadata: Record<string, string> = { business_id };
-    if (founder_session_id) metadata.founder_session_id = founder_session_id;
+    if (founderSessionId) metadata.founder_session_id = founderSessionId;
 
     const accountId = await getConnectAccountId(business_id);
     let chargesEnabled = false;

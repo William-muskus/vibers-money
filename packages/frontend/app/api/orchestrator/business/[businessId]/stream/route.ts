@@ -2,17 +2,24 @@
  * SSE stream proxy — forwards orchestrator stream to avoid CORS.
  * Next.js rewrites buffer SSE; this route streams properly.
  */
-const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
+import { getFounderIdFromRequest } from '@/lib/auth-server';
+
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ businessId: string }> },
 ) {
+  const founderId = await getFounderIdFromRequest(req);
+  if (!founderId) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
   const { businessId } = await context.params;
-  const url = `${ORCHESTRATOR_URL}/api/business/${businessId}/stream`;
+  const url = new URL(`${ORCHESTRATOR_URL}/api/business/${businessId}/stream`);
+  url.searchParams.set('session_id', founderId);
 
-  const res = await fetch(url, {
-    headers: { Accept: 'text/event-stream' },
+  const res = await fetch(url.toString(), {
+    headers: { Accept: 'text/event-stream', 'X-Founder-Session-Id': founderId },
     cache: 'no-store',
   });
 

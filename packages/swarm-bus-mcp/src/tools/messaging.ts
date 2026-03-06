@@ -22,9 +22,9 @@ export function createMessagingTools() {
         const { agentId } = getIdentity();
         logger.info('tool', { tool: 'swarm_check_inbox', agentId });
         const mark = args.mark_read !== false;
-        const messages = getUnread(agentId);
+        const messages = await getUnread(agentId);
         if (mark && messages.length > 0) {
-          markRead(agentId, new Set(messages.map((m) => m.id)));
+          await markRead(agentId, new Set(messages.map((m) => m.id)));
         }
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ messages }, null, 2) }],
@@ -42,10 +42,10 @@ export function createMessagingTools() {
       handler: async (args: { to: string; content: string; priority?: 'low' | 'normal' | 'high' | 'urgent' }) => {
         const { agentId, businessId } = getIdentity();
         logger.info('tool', { tool: 'swarm_send_message', agentId, to: args.to, contentLength: args.content?.length });
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from) throw new Error('Agent not registered');
 
-        const { allowed, toAgentId } = canSendTo(agentId, args.to, businessId);
+        const { allowed, toAgentId } = await canSendTo(agentId, args.to, businessId);
         if (!allowed || !toAgentId) throw new Error(`Cannot send to ${args.to} (hierarchy or not found)`);
 
         const msg: Message = {
@@ -60,7 +60,7 @@ export function createMessagingTools() {
           timestamp: new Date().toISOString(),
           read: false,
         };
-        addToInbox(toAgentId, msg);
+        await addToInbox(toAgentId, msg);
         scheduleWake(toAgentId);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ delivered: true, message_id: msg.id, to: args.to }) }],
@@ -76,11 +76,11 @@ export function createMessagingTools() {
       handler: async (args: { content: string }) => {
         const { agentId, businessId } = getIdentity();
         logger.info('tool', { tool: 'swarm_broadcast', agentId, contentLength: args.content?.length });
-        if (!isCEO(agentId)) throw new Error('Only CEO can broadcast');
-        const from = getAgent(agentId);
+        if (!(await isCEO(agentId))) throw new Error('Only CEO can broadcast');
+        const from = await getAgent(agentId);
         if (!from) throw new Error('Agent not registered');
 
-        const targets = getAgentsByBusiness(businessId).filter((a) => a.agent_id !== agentId);
+        const targets = (await getAgentsByBusiness(businessId)).filter((a) => a.agent_id !== agentId);
         const msgId = `msg-${uuidv4()}`;
         for (const t of targets) {
           const msg: Message = {
@@ -95,7 +95,7 @@ export function createMessagingTools() {
             timestamp: new Date().toISOString(),
             read: false,
           };
-          addToInbox(t.agent_id, msg);
+          await addToInbox(t.agent_id, msg);
           scheduleWake(t.agent_id);
         }
         return {
@@ -112,9 +112,9 @@ export function createMessagingTools() {
       handler: async (args: { message_id: string; content: string }) => {
         const { agentId, businessId } = getIdentity();
         logger.info('tool', { tool: 'swarm_reply', agentId, message_id: args.message_id });
-        const orig = findMessageById(args.message_id);
+        const orig = await findMessageById(args.message_id);
         if (!orig) throw new Error('Message not found');
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from) throw new Error('Agent not registered');
         const msg: Message = {
           id: `msg-${uuidv4()}`,
@@ -129,7 +129,7 @@ export function createMessagingTools() {
           read: false,
           metadata: { in_reply_to: args.message_id },
         };
-        addToInbox(orig.from_agent_id, msg);
+        await addToInbox(orig.from_agent_id, msg);
         scheduleWake(orig.from_agent_id);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ delivered: true }) }] };
       },

@@ -12,8 +12,14 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@auth/drizzle-adapter": "^1.11.1",
+    "@sentry/nextjs": "^8.45.0",
+    "better-sqlite3": "^12.6.2",
     "d3": "^7.9.0",
+    "drizzle-orm": "^0.45.1",
+    "ioredis": "^5.4.1",
     "next": "15.0.3",
+    "next-auth": "^5.0.0-beta.25",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -24,6 +30,7 @@
     "@tailwindcss/postcss": "^4.2.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/d3": "^7.4.3",
     "@types/node": "^22.9.0",
     "@types/react": "^18.2.0",

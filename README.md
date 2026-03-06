@@ -1,8 +1,13 @@
-# Vibers — Autonomous Business Launcher
+# Vibers.money — Autonomous Business Launcher
 
-**Launch any business and have it run autonomously by a swarm of intelligent agents.**
+**Launch any business and have it run autonomously by a swarm of AI agents.**
+
+Describe your idea → a CEO agent and directors (Marketing, Product, Finance, CTO, Security) stand up the company, create content, and keep working 24/7. Chat with your CEO, fund via Stripe, run locally or in the cloud.
 
 *Just vibe it.*
+
+**Suggested GitHub description:** *Launch any business with a swarm of AI agents — CEO, directors, and specialists that run 24/7. Next.js, Mistral Vibe, Stripe.*  
+**Suggested topics:** `ai-agents`, `mistral`, `nextjs`, `stripe`, `autonomous-agents`, `multi-agent`, `vibe`, `llm`.
 
 ---
 
@@ -17,10 +22,12 @@ Vibers is an **autonomous business creation platform**. You describe a business 
 
 ## Features
 
+- **Auth:** Sign in with GitHub or Google (NextAuth). Your businesses are tied to your account.
 - **Founder chat:** One prompt → CEO engages in a short exploratory conversation, then spawns the org.
 - **Agent hierarchy:** CEO → Security Director, CTO, Marketing Director, Product Director, Finance Director → specialists (e.g. Community Manager, Copywriter). All communicate via the Swarm Bus.
 - **Real work:** Agents use Mistral Vibe (tools, MCP, bash, browser automation when Computer Use is enabled). They write skills, manage todos, and report back.
-- **Live dashboard:** Real-time CEO stream, Swarm Bus feed, org directory, and (optional) graph view.
+- **Local or cloud:** Use Mistral API, AWS Bedrock, or a local model (Ollama, vLLM) — no API key needed for local.
+- **Live dashboard:** Real-time CEO stream, cold-start progress indicators, Swarm Bus feed, org directory, and (optional) graph view.
 - **Funding:** Per-business Stripe Checkout; optional Stripe Connect so each business gets its own payouts.
 - **Smart slug:** Business IDs are derived from your message (e.g. “launch vibers” → `vibers`) so the sidebar stays readable.
 
@@ -162,6 +169,7 @@ vibers-money/
 | `VIBE_CLI` | If `vibe` not on PATH | Full path to Vibe CLI (e.g. `vibe.exe` or `py -3 -m vibe.cli.entrypoint`). |
 | `VIBE_USE_PYTHON_MODULE` | No | Set to `1` to run Vibe as `py -m vibe.cli.entrypoint` (avoids PATH issues on Windows). |
 | `SWARM_BUS_URL` | No | Default `http://localhost:3100`. Set in production to your Swarm Bus URL. |
+| `REDIS_URL` | No | When set, Swarm Bus persists agent registry and inboxes in Redis (survives restarts). When unset, uses in-memory storage (fine for local dev). |
 | `ORCHESTRATOR_URL` | No | Default `http://localhost:3000`. Used by Swarm Bus / webhooks. |
 | `COMPUTER_USE_URL` | No | Default `http://localhost:3200`. For agents that use browser automation. |
 | **Stripe** | For funding | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`; see [Stripe README](packages/frontend/app/api/stripe/README.md). |

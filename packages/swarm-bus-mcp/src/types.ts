@@ -29,6 +29,8 @@ export interface Message {
   priority: MessagePriority;
   timestamp: string;
   read: boolean;
+  /** Monotonically increasing sequence per business; used for deterministic ordering. */
+  seq?: number;
   metadata?: Record<string, unknown>;
 }
 

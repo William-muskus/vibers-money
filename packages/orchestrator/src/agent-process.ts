@@ -86,6 +86,16 @@ export class AgentProcess {
   /** Resolves when resume() is called so the loop can continue. */
   private resumeResolve: (() => void) | null = null;
 
+  /** Consecutive non-zero exits; reset on success. Used for exponential backoff and circuit breaker. */
+  private consecutiveFailures = 0;
+
+  /** For cold-start UX: emit lifecycle events; reset each cycle. */
+  private cycleLifecycleThinkingEmitted = false;
+
+  private static readonly MAX_CONSECUTIVE_FAILURES = 5;
+  private static readonly BACKOFF_BASE_MS = 5000;
+  private static readonly BACKOFF_CAP_MS = 120000;
+
   constructor(
     agentId: string,
     businessId: string,
@@ -133,6 +143,11 @@ export class AgentProcess {
     }
 
     if (msg.role === 'system') return;
+
+    if (!this.cycleLifecycleThinkingEmitted) {
+      this.cycleLifecycleThinkingEmitted = true;
+      this.broadcast({ type: 'lifecycle', stage: 'agent_thinking', agent: this.key });
+    }
 
     // ask_user_question is CEO-only (founder questions); in this product the CEO has it disabled
     // and asks in message content. Other agents use Swarm Bus to ask each other. No detection here.
@@ -325,6 +340,9 @@ export class AgentProcess {
         hasSession: !!this.sessionId,
       });
 
+      this.cycleLifecycleThinkingEmitted = false;
+      this.broadcast({ type: 'lifecycle', stage: 'agent_spawning', agent: this.key });
+
       // Spawn vibe directly (no bat on Windows). Bat was causing ANSI output instead of NDJSON.
       // Use NUL for stdin to avoid blocking on sys.stdin.read().
       // On Windows: CREATE_NO_WINDOW (0x08000000) prevents the child from attaching to a console;
@@ -425,16 +443,38 @@ export class AgentProcess {
       }
 
       const hasWork = this.pendingPrompts.length > 0;
-      logger.info('vibe_exit', {
-        key: this.key,
-        exitCode,
-        pendingPrompts: this.pendingPrompts.length,
-        nextAction: exitCode !== 0 ? 'retry 5s' : hasWork ? 'immediate (has work)' : 'idle',
-      });
 
-      if (exitCode !== 0) {
-        await sleep(5000);
+      if (exitCode !== 0 && exitCode !== null) {
+        this.consecutiveFailures += 1;
+        const delay = Math.min(
+          AgentProcess.BACKOFF_BASE_MS * Math.pow(2, this.consecutiveFailures - 1),
+          AgentProcess.BACKOFF_CAP_MS,
+        );
+        logger.info('vibe_exit', {
+          key: this.key,
+          exitCode,
+          consecutiveFailures: this.consecutiveFailures,
+          backoffMs: delay,
+          nextAction: this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES ? 'circuit_break' : 'retry',
+        });
+        if (this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES) {
+          this.pause();
+          try {
+            await this.config.onCircuitBreak?.(this.businessId, this.key, this.agentId, this.consecutiveFailures);
+          } catch (err) {
+            logger.warn('onCircuitBreak_error', { key: this.key, error: String((err as Error).message) });
+          }
+          return;
+        }
+        await sleep(delay);
       } else {
+        this.consecutiveFailures = 0;
+        logger.info('vibe_exit', {
+          key: this.key,
+          exitCode,
+          pendingPrompts: this.pendingPrompts.length,
+          nextAction: hasWork ? 'immediate (has work)' : 'idle',
+        });
         await sleep(2000);
       }
     }

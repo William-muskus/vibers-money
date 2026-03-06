@@ -23,7 +23,7 @@ export function createStatusTools() {
       inputSchema: {},
       handler: async (_args: Record<string, never>) => {
         const { businessId } = getIdentity();
-        const agents = getAgentsByBusiness(businessId).map((a) => ({
+        const agents = (await getAgentsByBusiness(businessId)).map((a) => ({
           role: a.role,
           agent_id: a.agent_id,
           role_type: a.role_type,
@@ -38,7 +38,7 @@ export function createStatusTools() {
       inputSchema: { content: z.string() },
       handler: async (args: { content: string }) => {
         const { agentId, businessId } = getIdentity();
-        const from = getAgent(agentId);
+        const from = await getAgent(agentId);
         if (!from?.parent) throw new Error('No parent to report to');
         const msg: Message = {
           id: `msg-${uuidv4()}`,
@@ -53,7 +53,7 @@ export function createStatusTools() {
           read: false,
           metadata: { type: 'status_update' },
         };
-        addToInbox(from.parent, msg);
+        await addToInbox(from.parent, msg);
         scheduleWake(from.parent);
         return { content: [{ type: 'text' as const, text: JSON.stringify({ delivered: true }) }] };
       },
