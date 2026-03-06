@@ -7,6 +7,34 @@ import ActivityLine from './ActivityLine';
 
 type ActivityMsg = Record<string, unknown>;
 
+/** Internal prompts we send to the agent each cycle — don't clutter the mosaic. */
+function isInternalPrompt(msg: ActivityMsg): boolean {
+  const role = msg.role as string | undefined;
+  const raw = msg.content;
+  const content =
+    typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? (raw as { type?: string; text?: string }[])
+            .map((p) => (p?.type === 'text' && typeof p?.text === 'string' ? p.text : ''))
+            .join('')
+        : '';
+  const t = content.trim();
+  if (!t) return false;
+  if (role === 'system') return true;
+  if (role === 'user') {
+    if (/The founder sent you a message:\s*"/i.test(t)) return true;
+    if (/^Continue\.?\s*$/i.test(t)) return true;
+    if (/Read your AGENTS\.md/i.test(t)) return true;
+    if (/Check your messages and todos/i.test(t)) return true;
+    if (/Check your swarm bus inbox/i.test(t)) return true;
+    return true; // hide all other user prompts (orchestrator-injected)
+  }
+  // Hide assistant messages that are just the prompt echoed back (local model / stub)
+  if (role === 'assistant' && /^You are the CEO of this business\.\s*Read your AGENTS\.md/i.test(t)) return true;
+  return false;
+}
+
 export default function AgentTile({
   agentKey,
   initialMode,
@@ -38,7 +66,9 @@ export default function AgentTile({
       if (event.type === 'info') setConnected(true);
       if (event.type === 'activity') {
         setLastActivityTime(Date.now());
-        if (event.msg) setActivities((prev) => [...prev.slice(-199), event.msg!]);
+        if (event.msg && !isInternalPrompt(event.msg)) {
+          setActivities((prev) => [...prev.slice(-199), event.msg!]);
+        }
       }
       if (event.type === 'mode_switch' && event.mode) setMode(event.mode as 'terminal' | 'browser');
       if (event.type === 'screencast_frame') {

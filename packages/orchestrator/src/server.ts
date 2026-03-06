@@ -22,6 +22,7 @@ import {
   listBusinessIdsFromDisk,
 } from './spawner.js';
 import { deriveConceptSlug } from './derive-concept-slug.js';
+import { getInferenceConfig, checkInferenceHealth, checkInferenceHealthWithRetry } from './inference-engine.js';
 import { logger } from './logger.js';
 
 /** Resolve agents by business id. */
@@ -143,6 +144,15 @@ app.get('/api/admin/businesses', async (_req: Request, res: Response) => {
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'orchestrator' });
+});
+
+/** GET /api/inference/health — Local inference engine status and model availability. */
+app.get('/api/inference/health', async (_req: Request, res: Response) => {
+  const config = getInferenceConfig();
+  if (!config) return res.json({ enabled: false });
+  const requiredModels = [process.env.LOCAL_LLM_MODEL || 'mistral:7b'];
+  const health = await checkInferenceHealth(config, requiredModels);
+  res.json({ enabled: true, engine: config.type, ...health });
 });
 
 /** POST /api/business/create — Create business + spawn CEO. */
@@ -365,5 +375,18 @@ const PORT = Number(process.env.ORCHESTRATOR_PORT) || 3000;
 if (!process.env.VITEST) {
   app.listen(PORT, () => {
     logger.info('listening', { port: PORT, url: `http://localhost:${PORT}` });
+    const inferenceConfig = getInferenceConfig();
+    if (inferenceConfig) {
+      logger.info(`Using ${inferenceConfig.type} inference at ${inferenceConfig.apiBase}`);
+      const requiredModels = [process.env.LOCAL_LLM_MODEL || 'mistral:7b'];
+      checkInferenceHealthWithRetry(inferenceConfig, requiredModels, ({ healthy, available, missing }) => {
+        if (healthy) logger.info('Inference server healthy', { available, missing });
+        else
+          logger.warn('Inference server not reachable — is the Rust inference server running on 8080?', {
+            apiBase: inferenceConfig.apiBase,
+            healthEndpoint: inferenceConfig.healthEndpoint,
+          });
+      });
+    }
   });
 }

@@ -33,6 +33,18 @@ services:
       - businesses_data:/app/businesses
     depends_on: [swarm-bus]
 
+  inference:
+    build:
+      context: .
+      dockerfile: packages/inference-engine/Dockerfile
+    ports: ["8080:8080"]
+    environment:
+      LOG_JSON: "1"
+    volumes:
+      - ./packages/inference-engine/models:/app/models:ro
+      - ./packages/inference-engine/configs:/app/configs:ro
+    profiles: ["local-inference"]
+
 volumes:
   redis_data: {}
   businesses_data: {}

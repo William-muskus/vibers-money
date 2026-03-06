@@ -2,7 +2,7 @@
  * Redis client for swarm-bus persistence. When REDIS_URL is unset, getRedis() returns null
  * and callers use in-memory fallback (local dev).
  */
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { logger } from '../logger.js';
 
 let client: Redis | null = null;
@@ -16,7 +16,7 @@ export async function getRedis(): Promise<Redis | null> {
   connectPromise = (async () => {
     try {
       client = new Redis(url, { maxRetriesPerRequest: 2 });
-      client.on('error', (err) => logger.warn('redis_error', { error: String((err as Error).message) }));
+      client.on('error', (err: Error) => logger.warn('redis_error', { error: String(err.message) }));
       await client.ping();
       logger.info('redis_connected', {});
       return client;

@@ -89,7 +89,8 @@ export default function ChatView({
   const [sending, setSending] = useState(false);
   const [waitingForReply, setWaitingForReply] = useState(false);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
-  const [progressStage, setProgressStage] = useState<'agent_spawning' | 'agent_tools_loaded' | 'agent_thinking' | null>(null);
+  const [progressStage, setProgressStage] = useState<'agent_spawning' | 'agent_tools_loaded' | 'agent_thinking' | 'agent_tools' | null>(null);
+  const [thinkingStuckHint, setThinkingStuckHint] = useState(false);
   const [connected, setConnected] = useState(false);
   const [connectionFailed, setConnectionFailed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -97,6 +98,7 @@ export default function ChatView({
   const seenIdsRef = useRef(new Set<string>());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamUrl = ceoStreamUrl(businessId);
+  const thinkingStuckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed seen IDs from restored cache so we don't duplicate assistant messages from stream
   const seededRef = useRef(false);
@@ -150,7 +152,23 @@ export default function ChatView({
           const stage = (event as { stage?: string }).stage;
           if (stage === 'agent_spawning' || stage === 'agent_tools_loaded' || stage === 'agent_thinking') {
             setProgressStage(stage);
+            setThinkingStuckHint(false);
+            if (thinkingStuckTimeoutRef.current) {
+              clearTimeout(thinkingStuckTimeoutRef.current);
+              thinkingStuckTimeoutRef.current = null;
+            }
+            if (stage === 'agent_thinking') {
+              thinkingStuckTimeoutRef.current = setTimeout(() => {
+                thinkingStuckTimeoutRef.current = null;
+                setThinkingStuckHint(true);
+              }, 90_000);
+            }
           }
+          return;
+        }
+
+        if (event.type === 'activity' && event.msg && (event.msg as { type?: string }).type === 'tool_use') {
+          setProgressStage('agent_tools');
           return;
         }
 
@@ -184,12 +202,23 @@ export default function ChatView({
         const messageId = (msg as { message_id?: string }).message_id;
 
         if (role === 'system') return;
-        if (!content.trim()) return;
         if (role !== 'user' && role !== 'assistant') return;
+
+        // Clear "Thinking" as soon as we see assistant activity (even empty chunk), so we don't stay stuck
+        if (role === 'assistant') {
+          setWaitingForReply(false);
+          setShowTypingIndicator(false);
+          setProgressStage(null);
+          setThinkingStuckHint(false);
+          if (thinkingStuckTimeoutRef.current) {
+            clearTimeout(thinkingStuckTimeoutRef.current);
+            thinkingStuckTimeoutRef.current = null;
+          }
+          if (!content.trim()) return; // wait for first non-empty chunk to add message
+        }
 
         if (role === 'user') {
           // CEO stream echoes "The founder sent you a message: \"...\"" — that's the inject to the agent, not a chat message.
-          // We already show the user's message from the composer; don't add this internal event to the thread.
           const founderMatch = content.match(/The founder sent you a message:\s*"([^"]*)"/);
           if (founderMatch) {
             if (messageId) seenIdsRef.current.add(messageId);
@@ -198,16 +227,14 @@ export default function ChatView({
           if (/^Continue\.?\s*$/i.test(content.trim())) return;
           if (/Read your AGENTS\.md/i.test(content)) return;
           if (/Check your messages and todos/i.test(content)) return;
+          if (/Check your swarm bus inbox/i.test(content)) return;
           return;
         }
 
-        setWaitingForReply(false);
-        setShowTypingIndicator(false);
-        setProgressStage(null);
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = null;
-        }
+        if (!content.trim()) return;
+
+        // Ignore assistant messages that are just the prompt echoed back (local model bug)
+        if (role === 'assistant' && /^You are the CEO of this business\.\s*Read your AGENTS\.md/i.test(content.trim())) return;
 
         // Merge streaming chunks: if this assistant message has the same message_id as the last assistant message, append content
         if (messageId && seenIdsRef.current.has(messageId)) {
@@ -259,6 +286,7 @@ export default function ChatView({
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (thinkingStuckTimeoutRef.current) clearTimeout(thinkingStuckTimeoutRef.current);
     };
   }, []);
 
@@ -322,6 +350,12 @@ export default function ChatView({
                       {progressStage === 'agent_spawning' && 'Starting CEO agent...'}
                       {progressStage === 'agent_tools_loaded' && 'Loading tools...'}
                       {progressStage === 'agent_thinking' && 'Thinking about your business...'}
+                      {progressStage === 'agent_tools' && 'Using tools (e.g. Swarm Bus)...'}
+                    </p>
+                  )}
+                  {thinkingStuckHint && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                      Still working — the CEO can take a minute with the local model. Check the orchestrator terminal for progress.
                     </p>
                   )}
                 </div>
@@ -345,8 +379,14 @@ export default function ChatView({
                         {progressStage === 'agent_spawning' && 'Starting CEO agent...'}
                         {progressStage === 'agent_tools_loaded' && 'Loading tools...'}
                         {progressStage === 'agent_thinking' && 'Thinking about your business...'}
+                        {progressStage === 'agent_tools' && 'Using tools...'}
                       </span>
                     </div>
+                  </div>
+                )}
+                {thinkingStuckHint && (
+                  <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200">
+                    Still working — the CEO can take a minute with the local model. Check the orchestrator terminal for progress.
                   </div>
                 )}
                 {(sending || waitingForReply) && (
@@ -354,7 +394,7 @@ export default function ChatView({
                     <div className="flex items-start gap-3 animate-fade-in">
                       <div className="rounded-2xl rounded-br-md border border-indigo-200/80 bg-indigo-50/90 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-indigo-400/25 dark:bg-indigo-950/60">
                         <span className="text-sm font-medium text-indigo-700 dark:text-indigo-200">
-                          {progressStage ? (progressStage === 'agent_thinking' ? 'Thinking...' : progressStage === 'agent_spawning' ? 'Starting...' : 'Loading...') : showTypingIndicator ? 'Typing...' : 'Thinking...'}
+                          {progressStage ? (progressStage === 'agent_thinking' ? 'Thinking...' : progressStage === 'agent_tools' ? 'Using tools...' : progressStage === 'agent_spawning' ? 'Starting...' : 'Loading...') : showTypingIndicator ? 'Typing...' : 'Thinking...'}
                         </span>
                       </div>
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 dark:bg-indigo-400/25 ring-2 ring-indigo-400/30 dark:ring-indigo-300/30">

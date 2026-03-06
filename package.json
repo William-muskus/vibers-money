@@ -13,7 +13,10 @@
     "dev:swarm-bus": "npm run dev -w @vibers/swarm-bus-mcp",
     "dev:computer-use": "npm run dev -w @vibers/computer-use-mcp",
     "dev:frontend": "npm run dev -w @vibers/frontend",
-    "dev:all-windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-all.ps1"
+    "dev:all-windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-all.ps1",
+    "build:inference": "cd packages/inference-engine && cargo build --release --features candle",
+    "dev:inference": "cd packages/inference-engine && cargo run --release --features candle -- --config configs/roles.toml --port 8080 --log-json",
+    "dev:inference-cpu": "cd packages/inference-engine && cargo run --release --features candle -- --config configs/roles.toml --port 8080"
   },
   "engines": {
     "node": ">=18"

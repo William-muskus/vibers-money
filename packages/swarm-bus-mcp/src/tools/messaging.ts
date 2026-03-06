@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { getIdentity } from '../context.js';
+import { isFusedChain } from '../core/fused-chains.js';
 import { getAgent, getAgentsByBusiness } from '../core/registry.js';
 import { canSendTo, isCEO } from '../core/router.js';
 import { addToInbox, getUnread, markRead, findMessageById } from '../core/store.js';
@@ -47,6 +48,45 @@ export function createMessagingTools() {
 
         const { allowed, toAgentId } = await canSendTo(agentId, args.to, businessId);
         if (!allowed || !toAgentId) throw new Error(`Cannot send to ${args.to} (hierarchy or not found)`);
+
+        const fusedSidecarUrl = process.env.FUSED_SIDECAR_URL?.trim();
+        if (fusedSidecarUrl && isFusedChain(from.role, args.to)) {
+          try {
+            const res = await fetch(`${fusedSidecarUrl.replace(/\/$/, '')}/v1/fused`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                from_role: from.role,
+                to_role: args.to,
+                input: args.content,
+                business_id: businessId,
+              }),
+            });
+            const result = (await res.json()) as { ok?: boolean; content?: string; error?: string };
+            if (result.ok && typeof result.content === 'string') {
+              const fusedMsg: Message = {
+                id: `msg-${uuidv4()}`,
+                type: 'message',
+                from_agent_id: agentId,
+                from_role: from.role,
+                to_agent_id: toAgentId,
+                business_id: businessId,
+                content: result.content,
+                priority: args.priority ?? 'normal',
+                timestamp: new Date().toISOString(),
+                read: false,
+                metadata: { fused: true },
+              };
+              await addToInbox(toAgentId, fusedMsg);
+              scheduleWake(toAgentId);
+              return {
+                content: [{ type: 'text' as const, text: JSON.stringify({ delivered: true, fused: true, message_id: fusedMsg.id, to: args.to }) }],
+              };
+            }
+          } catch (err) {
+            logger.warn('fused_sidecar_failed', { from: from.role, to: args.to, error: String(err) });
+          }
+        }
 
         const msg: Message = {
           id: `msg-${uuidv4()}`,

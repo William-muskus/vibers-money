@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import Handlebars from 'handlebars';
 import { AgentProcess } from './agent-process.js';
 import { registerAgent } from './registry.js';
+import { getModelForRole } from './role-models.js';
 import { logger } from './logger.js';
 import { captureException } from './sentry.js';
 
@@ -197,8 +198,9 @@ export async function provisionAgent(
   const devRoles = ['product-director', 'cto', 'security-director'];
   const isDevRole = devRoles.includes(role);
   const useBedrock = USE_AWS_BEDROCK && BEDROCK_GATEWAY_URL.length > 0;
+  const roleConfig = getModelForRole(role);
   const activeModel = USE_LOCAL_LLM
-    ? 'local'
+    ? (roleConfig.alias ?? roleConfig.model)
     : useBedrock
       ? (isDevRole ? 'mistral-large-bedrock' : 'mistral-small-bedrock')
       : (isDevRole ? 'labs-devstral-small-2512' : 'mistral-small');
@@ -210,9 +212,13 @@ export async function provisionAgent(
     is_ceo: role === 'ceo',
     active_model: activeModel,
     use_local: USE_LOCAL_LLM,
-    local_api_base: LOCAL_LLM_API_BASE.replace(/\/$/, ''),
-    local_model_name: LOCAL_LLM_MODEL,
-    local_model_alias: 'local',
+    local_api_base: (() => {
+      const b = LOCAL_LLM_API_BASE.replace(/\/$/, '');
+      return b.endsWith('/v1') ? b : `${b}/v1`;
+    })(),
+    local_model_name: roleConfig.model,
+    local_model_alias: roleConfig.alias ?? roleConfig.model,
+    local_temperature: roleConfig.temperature ?? 0.3,
     use_bedrock: useBedrock,
     bedrock_gateway_url: BEDROCK_GATEWAY_URL.replace(/\/$/, ''),
     swarm_bus_url: SWARM_BUS_URL + '/mcp',

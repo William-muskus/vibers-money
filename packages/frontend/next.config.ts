@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next';
+import path from 'path';
+import { config } from 'dotenv';
 import { withSentryConfig } from '@sentry/nextjs';
+
+// Load repo root .env so AUTH_SECRET (and other auth vars) are available when running from monorepo
+config({ path: path.resolve(__dirname, '../../.env'), override: false });
 
 const orchestratorUrl = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 

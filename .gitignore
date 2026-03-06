@@ -12,10 +12,28 @@ out/
 docs/
 documentation/
 
-# Environment
+# Environment and secrets — never commit real keys
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.development.local
+.env.test.local
+*.env
+
+# Private keys and credentials
+*.pem
+*.key
+*credentials*.json
+*secret*.json
+*service-account*.json
+stripe-connect.json
+firebase-adminsdk*.json
+google-credentials*.json
+
+# Local / IDE
+.cursor/
 
 # IDE
 .idea/
@@ -39,3 +57,9 @@ businesses/
 
 # Stripe Connect per-business account IDs (sensitive)
 data/
+
+# Inference engine weight files (keep models/.gitkeep)
+packages/inference-engine/models/*
+!packages/inference-engine/models/.gitkeep
+# Rust build artifacts
+packages/inference-engine/target/

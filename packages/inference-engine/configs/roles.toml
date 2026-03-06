@@ -1,0 +1,15 @@
+# Role -> model mapping for vibers-inference (Phase 4: speculative decoding config lives here)
+# For now the engine uses LOCAL_LLM_MODEL env; this file is for future draft_model, draft_tokens, etc.
+
+[defaults]
+# draft_model = "models/draft-125m-q4.gguf"
+# draft_tokens = 8
+# adaptive_draft = true
+
+# [roles.ceo]
+# model = "models/vibers-ceo-q4.gguf"
+# draft_tokens = 6
+
+# [roles.marketing-director]
+# model = "models/vibers-marketing-q4.gguf"
+# draft_tokens = 10
