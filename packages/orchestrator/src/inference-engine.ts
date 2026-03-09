@@ -13,12 +13,12 @@ export interface InferenceEngineConfig {
 export function getInferenceConfig(): InferenceEngineConfig | null {
   const apiBase = process.env.LOCAL_LLM_API_BASE?.trim();
   if (!apiBase) return null;
-  const type = (process.env.LOCAL_LLM_ENGINE || 'ollama') as InferenceEngineConfig['type'];
+  const type = (process.env.LOCAL_LLM_ENGINE || 'rust-candle') as InferenceEngineConfig['type'];
   const base = apiBase.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
   return {
     type,
     apiBase,
-    healthEndpoint: `${base}/v1/models`,
+    healthEndpoint: `${base}/health`,
   };
 }
 
@@ -35,10 +35,21 @@ export async function checkInferenceHealth(
   try {
     const res = await fetch(config.healthEndpoint);
     if (!res.ok) return { healthy: false, available: [], missing: requiredModels };
-    const data = (await res.json()) as { data?: Array<{ id: string }> };
-    const available = (data.data || []).map((m) => m.id);
-    const missing = requiredModels.filter((m) => !available.includes(m));
-    return { healthy: true, available, missing };
+    const data = (await res.json()) as { ok?: boolean; model_loaded?: boolean; data?: Array<{ id: string }> };
+    const healthy = data?.ok !== false;
+    let available: string[];
+    let missing: string[];
+    if (data?.model_loaded === true) {
+      available = requiredModels.length > 0 ? [...requiredModels] : ['loaded'];
+      missing = [];
+    } else if (Array.isArray(data?.data)) {
+      available = (data.data || []).map((m) => m.id);
+      missing = requiredModels.filter((m) => !available.includes(m));
+    } else {
+      available = [];
+      missing = requiredModels;
+    }
+    return { healthy, available, missing };
   } catch (err) {
     logger.warn('Inference health check failed', {
       error: String(err),

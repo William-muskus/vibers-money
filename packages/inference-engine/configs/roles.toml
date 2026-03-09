@@ -1,15 +1,16 @@
-# Role -> model mapping for vibers-inference (Phase 4: speculative decoding config lives here)
-# For now the engine uses LOCAL_LLM_MODEL env; this file is for future draft_model, draft_tokens, etc.
+# Role -> model mapping for vibers-inference (Phase 4: speculative decoding config lives here).
+# GET /v1/models uses model_ids from [roles.*].model; POST /v1/fused requires both from_role and to_role in [roles.*].
+# Set paths to your GGUF files (relative to cwd or container /app/models).
 
 [defaults]
 # draft_model = "models/draft-125m-q4.gguf"
-# draft_tokens = 8
+draft_tokens = 8
 # adaptive_draft = true
 
-# [roles.ceo]
-# model = "models/vibers-ceo-q4.gguf"
+[roles.ceo]
+model = "models/ceo.gguf"
 # draft_tokens = 6
 
-# [roles.marketing-director]
-# model = "models/vibers-marketing-q4.gguf"
+[roles.marketing-director]
+model = "models/marketing.gguf"
 # draft_tokens = 10

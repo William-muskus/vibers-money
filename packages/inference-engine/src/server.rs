@@ -1,4 +1,4 @@
-//! Axum app: /v1/models, /v1/chat/completions, /v1/fused (stub).
+//! Axum app: /v1/models, /v1/chat/completions, /v1/fused, /health.
 use axum::{
     extract::DefaultBodyLimit,
     routing::{get, post},
@@ -6,7 +6,7 @@ use axum::{
 };
 use tower_http::cors::CorsLayer;
 
-use crate::api::{chat, fused, models};
+use crate::api::{chat, fused, health, models};
 use crate::config::{AppState, RolesConfig};
 
 const BODY_LIMIT_MB: usize = 2;
@@ -33,8 +33,13 @@ pub fn app(roles_config: RolesConfig) -> Router {
         roles_config,
         #[cfg(feature = "candle")]
         inference_engine: crate::inference::engine::init_engine_for_app(),
+        #[cfg(feature = "candle")]
+        fused_engine: Some(std::sync::Arc::new(std::sync::Mutex::new(
+            crate::config::FusedEngineState::default(),
+        ))),
     };
     Router::new()
+        .route("/health", get(health::health))
         .route("/v1/models", get(models::get_models))
         .route("/v1/chat/completions", post(chat::chat_completions))
         .route("/v1/fused", post(fused::fused))

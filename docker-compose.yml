@@ -17,6 +17,8 @@ services:
     environment:
       SWARM_BUS_PORT: "3100"
       REDIS_URL: "redis://redis:6379"
+      # When running with profile local-inference, point to the inference sidecar for fused chains
+      FUSED_SIDECAR_URL: "http://inference:8080"
     depends_on: [redis]
 
   orchestrator:
@@ -40,6 +42,10 @@ services:
     ports: ["8080:8080"]
     environment:
       LOG_JSON: "1"
+      # Override in .env or docker compose: path to GGUF inside container (e.g. /app/models/your.gguf)
+      MODEL_PATH: "/app/models/main.gguf"
+      # Optional: draft model for speculative decoding
+      # DRAFT_MODEL_PATH: "/app/models/draft.gguf"
     volumes:
       - ./packages/inference-engine/models:/app/models:ro
       - ./packages/inference-engine/configs:/app/configs:ro

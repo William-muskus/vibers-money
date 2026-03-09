@@ -47,6 +47,8 @@ const BEDROCK_GATEWAY_API_KEY = process.env.BEDROCK_GATEWAY_API_KEY || '';
 const LOCAL_LLM_API_BASE = (process.env.LOCAL_LLM_API_BASE ?? '').trim();
 const LOCAL_LLM_MODEL = (process.env.LOCAL_LLM_MODEL ?? 'mistral:7b').trim();
 const USE_LOCAL_LLM = LOCAL_LLM_API_BASE.length > 0;
+const RECORD_INFERENCE_USAGE = process.env.RECORD_INFERENCE_USAGE?.trim() === '1' || process.env.RECORD_INFERENCE_USAGE?.toLowerCase() === 'true';
+const ORCHESTRATOR_PUBLIC_URL = (process.env.ORCHESTRATOR_PUBLIC_URL ?? process.env.ORCHESTRATOR_URL ?? '').trim();
 
 if (USE_LOCAL_LLM) {
   logger.info('local_llm_enabled', { api_base: LOCAL_LLM_API_BASE, model: LOCAL_LLM_MODEL });
@@ -213,6 +215,11 @@ export async function provisionAgent(
     active_model: activeModel,
     use_local: USE_LOCAL_LLM,
     local_api_base: (() => {
+      if (USE_LOCAL_LLM && RECORD_INFERENCE_USAGE && ORCHESTRATOR_PUBLIC_URL.length > 0) {
+        const base = ORCHESTRATOR_PUBLIC_URL.replace(/\/$/, '');
+        const prefix = base.endsWith('/api/inference/v1') ? base : `${base}/api/inference/v1`;
+        return `${prefix}?business_id=${encodeURIComponent(businessId)}&role=${encodeURIComponent(role)}`;
+      }
       const b = LOCAL_LLM_API_BASE.replace(/\/$/, '');
       return b.endsWith('/v1') ? b : `${b}/v1`;
     })(),

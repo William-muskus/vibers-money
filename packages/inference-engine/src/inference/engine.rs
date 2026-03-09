@@ -51,8 +51,19 @@ pub struct InferenceEngine {
 #[cfg(feature = "candle")]
 impl InferenceEngine {
     pub fn new() -> Self {
-        let use_cuda = std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
-            || std::env::var("VIBERS_INFERENCE_CUDA").as_deref() == Ok("1");
+        // When built with cuda: use GPU by default; set VIBERS_INFERENCE_CPU=1 to force CPU.
+        // When built without cuda: use GPU only if CUDA_VISIBLE_DEVICES or VIBERS_INFERENCE_CUDA=1 (no-op, CPU used).
+        let use_cuda = {
+            #[cfg(feature = "cuda")]
+            {
+                std::env::var("VIBERS_INFERENCE_CPU").as_deref() != Ok("1")
+            }
+            #[cfg(not(feature = "cuda"))]
+            {
+                std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
+                    || std::env::var("VIBERS_INFERENCE_CUDA").as_deref() == Ok("1")
+            }
+        };
         Self {
             model: None,
             draft_model: None,
@@ -100,6 +111,19 @@ impl InferenceEngine {
         logits.squeeze(0).map_err(|e| e.to_string())
     }
 
+    /// Returns true if current output ends with any of the stop strings (trimmed comparison).
+    fn output_ends_with_stop(current: &str, stop: Option<&[String]>) -> bool {
+        let stop = match stop {
+            Some(s) if !s.is_empty() => s,
+            _ => return false,
+        };
+        let trimmed = current.trim_end();
+        stop.iter().any(|s| {
+            let t = s.trim();
+            !t.is_empty() && trimmed.ends_with(t)
+        })
+    }
+
     /// Sample one token from a model given current tokens and index.
     fn next_token_from_model(
         model: &loader::LoadedModel,
@@ -122,11 +146,70 @@ impl InferenceEngine {
         sampling::sample_next_token_from_tensor(&logits, temperature, None, rng).map_err(|e| e.to_string())
     }
 
+    /// Return logits row for the next token at the given position (same forward as next_token_from_model, no sampling).
+    fn get_logits_at(
+        model: &loader::LoadedModel,
+        tokens: &[u32],
+        index_pos: usize,
+    ) -> Result<Tensor, String> {
+        let mut weights = model.weights.lock().map_err(|e| e.to_string())?;
+        let (context_size, ctx_index) = if index_pos == 0 {
+            (tokens.len(), 0)
+        } else {
+            (1, index_pos)
+        };
+        let start = tokens.len().saturating_sub(context_size);
+        let ctxt: Vec<u32> = tokens[start..].to_vec();
+        let input = Tensor::new(ctxt.as_slice(), &model.device).map_err(|e| e.to_string())?;
+        let logits = weights.forward(&input, ctx_index).map_err(|e| e.to_string())?;
+        logits.squeeze(0).map_err(|e| e.to_string())
+    }
+
+    /// Build set of token IDs that extend current_text to a valid tool-call prefix (top-K by logits, filter by grammar).
+    /// Falls back to all top-K if none pass, to avoid deadlock.
+    fn allowed_ids_for_tool_call_prefix(
+        current_text: &str,
+        tokenizer: &tokenizers::Tokenizer,
+        logits: &Tensor,
+        allowed_names: &[String],
+        top_k: usize,
+    ) -> HashSet<u32> {
+        let logits_v: Vec<f32> = match logits.to_vec1() {
+            Ok(v) => v,
+            Err(_) => return HashSet::new(),
+        };
+        let mut indices: Vec<usize> = (0..logits_v.len()).collect();
+        indices.sort_by(|&a, &b| {
+            logits_v[b]
+                .partial_cmp(&logits_v[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut allowed = HashSet::new();
+        for id in indices.iter().take(top_k).copied() {
+            let id_u = id as u32;
+            if let Ok(tok_str) = tokenizer.decode(&[id_u], false) {
+                if constrained::is_valid_tool_call_prefix(
+                    &format!("{}{}", current_text, tok_str),
+                    allowed_names,
+                ) {
+                    allowed.insert(id_u);
+                }
+            }
+        }
+        if allowed.is_empty() {
+            for id in indices.into_iter().take(top_k) {
+                allowed.insert(id as u32);
+            }
+        }
+        allowed
+    }
+
     pub fn generate(
         &self,
         prompt: &str,
         max_tokens: u32,
         temperature: f32,
+        stop: Option<&[String]>,
     ) -> Result<Vec<String>, String> {
         let model = self
             .model
@@ -143,6 +226,7 @@ impl InferenceEngine {
         let top_p = None::<f32>;
         let mut output_strings = Vec::new();
         let mut index_pos = 0usize;
+        let mut current_text = String::new();
 
         for _ in 0..max_tokens {
             let (context_size, ctx_index) = if index_pos == 0 {
@@ -173,6 +257,10 @@ impl InferenceEngine {
             }
             if let Ok(decoded) = model.tokenizer.decode(&[next_token], false) {
                 if !decoded.is_empty() {
+                    current_text.push_str(&decoded);
+                    if Self::output_ends_with_stop(&current_text, stop) {
+                        break;
+                    }
                     output_strings.push(decoded);
                 }
             }
@@ -187,6 +275,7 @@ impl InferenceEngine {
         prompt: &str,
         max_tokens: u32,
         temperature: f32,
+        stop: Option<&[String]>,
         mut callback: F,
     ) -> Result<(), String>
     where
@@ -203,6 +292,7 @@ impl InferenceEngine {
         let mut rng = rand::rngs::StdRng::from_entropy();
         let top_p: Option<f32> = None;
         let mut index_pos = 0usize;
+        let mut current_text = String::new();
 
         for _ in 0..max_tokens {
             let (context_size, ctx_index) = if index_pos == 0 {
@@ -233,6 +323,10 @@ impl InferenceEngine {
             }
             if let Ok(decoded) = model.tokenizer.decode(&[next_token], false) {
                 if !decoded.is_empty() {
+                    current_text.push_str(&decoded);
+                    if Self::output_ends_with_stop(&current_text, stop) {
+                        break;
+                    }
                     callback(decoded);
                 }
             }
@@ -251,6 +345,7 @@ impl InferenceEngine {
         prompt: &str,
         max_tokens: u32,
         temperature: f32,
+        stop: Option<&[String]>,
     ) -> Result<Vec<String>, String> {
         const TOP_K_CONSTRAIN: usize = 512;
         let model = self.model.as_ref().ok_or_else(|| "no model loaded".to_string())?;
@@ -314,6 +409,75 @@ impl InferenceEngine {
                 if !decoded.is_empty() {
                     current_text.push_str(&decoded);
                     output_strings.push(decoded);
+                    if Self::output_ends_with_stop(&current_text, stop) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(output_strings)
+    }
+
+    /// Generate with token-level tool-call constraint: only tokens that extend current text to a valid tool-call prefix are allowed.
+    pub fn generate_constrained_tool_call(
+        &self,
+        prompt: &str,
+        allowed_tool_names: &[String],
+        max_tokens: u32,
+        temperature: f32,
+        stop: Option<&[String]>,
+    ) -> Result<Vec<String>, String> {
+        const TOP_K_CONSTRAIN: usize = 512;
+        let model = self.model.as_ref().ok_or_else(|| "no model loaded".to_string())?;
+        let mut weights = model.weights.lock().map_err(|e| e.to_string())?;
+        let encoded = model.tokenizer.encode(prompt, true).map_err(|e| e.to_string())?;
+        let mut tokens: Vec<u32> = encoded.get_ids().to_vec();
+        let max_tokens = max_tokens.min(2048) as usize;
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut output_strings = Vec::new();
+        let mut index_pos = 0usize;
+        let mut current_text = String::new();
+
+        for _ in 0..max_tokens {
+            let (context_size, ctx_index) = if index_pos == 0 {
+                (tokens.len(), 0)
+            } else {
+                (1, index_pos)
+            };
+            let start = tokens.len().saturating_sub(context_size);
+            let ctxt: Vec<u32> = tokens[start..].to_vec();
+            let input =
+                Tensor::new(ctxt.as_slice(), &model.device).map_err(|e| e.to_string())?;
+            let logits = weights.forward(&input, ctx_index).map_err(|e| e.to_string())?;
+            let logits = logits.squeeze(0).map_err(|e| e.to_string())?;
+            let allowed = Self::allowed_ids_for_tool_call_prefix(
+                &current_text,
+                &model.tokenizer,
+                &logits,
+                allowed_tool_names,
+                TOP_K_CONSTRAIN,
+            );
+            let next_token = sampling::sample_next_token_masked(
+                &logits,
+                &allowed,
+                temperature,
+                &mut rng,
+            )
+            .map_err(|e| e.to_string())?;
+            index_pos += ctxt.len();
+            tokens.push(next_token);
+
+            if model.eos_token_id == Some(next_token) {
+                break;
+            }
+            if let Ok(decoded) = model.tokenizer.decode(&[next_token], false) {
+                if !decoded.is_empty() {
+                    current_text.push_str(&decoded);
+                    output_strings.push(decoded);
+                    if Self::output_ends_with_stop(&current_text, stop) {
+                        break;
+                    }
                 }
             }
         }
@@ -328,6 +492,7 @@ impl InferenceEngine {
         draft_tokens_k: usize,
         max_tokens: u32,
         temperature: f32,
+        stop: Option<&[String]>,
     ) -> Result<Vec<String>, String> {
         let main = self.model.as_ref().ok_or_else(|| "no main model".to_string())?;
         let draft = self.draft_model.as_ref().ok_or_else(|| "no draft model".to_string())?;
@@ -339,6 +504,7 @@ impl InferenceEngine {
         let mut rng = rand::rngs::StdRng::from_entropy();
         let mut output_strings = Vec::new();
         let mut total_generated = 0usize;
+        let mut current_text = String::new();
 
         while total_generated < max_tokens {
             // Draft phase: propose K tokens (draft_seq = tokens + draft_tokens, do not mutate tokens yet)
@@ -395,6 +561,7 @@ impl InferenceEngine {
             for &tid in &new_token_ids {
                 if let Ok(s) = main.tokenizer.decode(&[tid], false) {
                     if !s.is_empty() {
+                        current_text.push_str(&s);
                         output_strings.push(s);
                     }
                 }
@@ -402,6 +569,177 @@ impl InferenceEngine {
             total_generated += new_token_ids.len();
             tokens.extend(new_token_ids);
 
+            if Self::output_ends_with_stop(&current_text, stop) {
+                break;
+            }
+            if main.eos_token_id == Some(one_more) {
+                break;
+            }
+        }
+
+        Ok(output_strings)
+    }
+
+    /// Speculative decoding with tool-call grammar: draft and main both constrained to valid tool-call prefix.
+    pub fn generate_speculative_tool_call(
+        &self,
+        prompt: &str,
+        draft_tokens_k: usize,
+        max_tokens: u32,
+        temperature: f32,
+        stop: Option<&[String]>,
+        allowed_tool_names: &[String],
+    ) -> Result<Vec<String>, String> {
+        const TOP_K_CONSTRAIN: usize = 512;
+        let main = self.model.as_ref().ok_or_else(|| "no main model".to_string())?;
+        let draft = self.draft_model.as_ref().ok_or_else(|| "no draft model".to_string())?;
+        let mut main_weights = main.weights.lock().map_err(|e| e.to_string())?;
+        let encoded = main.tokenizer.encode(prompt, true).map_err(|e| e.to_string())?;
+        let mut tokens: Vec<u32> = encoded.get_ids().to_vec();
+        let max_tokens = max_tokens.min(2048) as usize;
+        let k = draft_tokens_k.min(16).max(1);
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut output_strings = Vec::new();
+        let mut total_generated = 0usize;
+        let mut current_text = String::new();
+
+        while total_generated < max_tokens {
+            let current_text_before_draft = current_text.clone();
+            let mut draft_seq = tokens.clone();
+            let mut draft_proposals = Vec::with_capacity(k);
+            let mut draft_current_text = current_text_before_draft.clone();
+            let mut index_pos = tokens.len();
+
+            for _ in 0..k {
+                let logits = Self::get_logits_at(draft, &draft_seq, index_pos)?;
+                let allowed = Self::allowed_ids_for_tool_call_prefix(
+                    &draft_current_text,
+                    &main.tokenizer,
+                    &logits,
+                    allowed_tool_names,
+                    TOP_K_CONSTRAIN,
+                );
+                let next = sampling::sample_next_token_masked(
+                    &logits,
+                    &allowed,
+                    temperature,
+                    &mut rng,
+                )
+                .map_err(|e| e.to_string())?;
+                if main.eos_token_id == Some(next) {
+                    break;
+                }
+                draft_seq.push(next);
+                draft_proposals.push(next);
+                index_pos += 1;
+                if let Ok(s) = main.tokenizer.decode(&[next], false) {
+                    if !s.is_empty() {
+                        draft_current_text.push_str(&s);
+                    }
+                }
+            }
+
+            if draft_proposals.is_empty() {
+                break;
+            }
+
+            let full_seq: Vec<u32> =
+                tokens.iter().chain(draft_proposals.iter()).copied().collect();
+            let logits = Self::forward_full_logits(&mut main_weights, &main.device, &full_seq)?;
+            let seq_len = full_seq.len();
+            let prompt_len = tokens.len();
+            let n_proposed = draft_proposals.len();
+
+            let mut n_accept = 0usize;
+            for i in 0..n_proposed {
+                let prefix: Vec<u32> = draft_proposals[0..i].to_vec();
+                let text_i = if prefix.is_empty() {
+                    current_text_before_draft.clone()
+                } else {
+                    format!(
+                        "{}{}",
+                        current_text_before_draft,
+                        main.tokenizer
+                            .decode(&prefix, false)
+                            .unwrap_or_default()
+                    )
+                };
+                let row = logits.get(prompt_len + i).map_err(|e| e.to_string())?;
+                let allowed = Self::allowed_ids_for_tool_call_prefix(
+                    &text_i,
+                    &main.tokenizer,
+                    &row,
+                    allowed_tool_names,
+                    TOP_K_CONSTRAIN,
+                );
+                if allowed.contains(&draft_proposals[i]) {
+                    n_accept = i + 1;
+                } else {
+                    break;
+                }
+            }
+
+            current_text = if n_accept == 0 {
+                current_text_before_draft
+            } else {
+                format!(
+                    "{}{}",
+                    current_text_before_draft,
+                    main.tokenizer
+                        .decode(&draft_proposals[0..n_accept], false)
+                        .unwrap_or_default()
+                )
+            };
+
+            let mut new_token_ids = draft_proposals[..n_accept].to_vec();
+            let sample_pos = prompt_len + n_accept;
+            let one_more = if sample_pos < seq_len {
+                let row = logits.get(sample_pos).map_err(|e| e.to_string())?;
+                let allowed = Self::allowed_ids_for_tool_call_prefix(
+                    &current_text,
+                    &main.tokenizer,
+                    &row,
+                    allowed_tool_names,
+                    TOP_K_CONSTRAIN,
+                );
+                sampling::sample_next_token_masked(&row, &allowed, temperature, &mut rng)
+                    .map_err(|e| e.to_string())?
+            } else {
+                drop(main_weights);
+                let logits = Self::get_logits_at(main, &full_seq, sample_pos)?;
+                let allowed = Self::allowed_ids_for_tool_call_prefix(
+                    &current_text,
+                    &main.tokenizer,
+                    &logits,
+                    allowed_tool_names,
+                    TOP_K_CONSTRAIN,
+                );
+                let next = sampling::sample_next_token_masked(
+                    &logits,
+                    &allowed,
+                    temperature,
+                    &mut rng,
+                )
+                .map_err(|e| e.to_string())?;
+                main_weights = main.weights.lock().map_err(|e| e.to_string())?;
+                next
+            };
+            new_token_ids.push(one_more);
+
+            for &tid in &new_token_ids {
+                if let Ok(s) = main.tokenizer.decode(&[tid], false) {
+                    if !s.is_empty() {
+                        current_text.push_str(&s);
+                        output_strings.push(s);
+                    }
+                }
+            }
+            total_generated += new_token_ids.len();
+            tokens.extend(new_token_ids);
+
+            if Self::output_ends_with_stop(&current_text, stop) {
+                break;
+            }
             if main.eos_token_id == Some(one_more) {
                 break;
             }
@@ -430,7 +768,7 @@ impl Default for InferenceEngine {
 /// tries packages/inference-engine/ + path (for npm run from repo root).
 /// Normalizes separators (e.g. forward slashes → backslashes on Windows) so File::open works.
 #[cfg(feature = "candle")]
-fn resolve_model_path(path: &str) -> PathBuf {
+pub fn resolve_model_path(path: &str) -> PathBuf {
     let p = Path::new(path);
     let resolved = if !p.is_relative() {
         p.to_path_buf()

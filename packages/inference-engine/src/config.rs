@@ -21,6 +21,16 @@ pub struct AppState {
     pub roles_config: RolesConfig,
     #[cfg(feature = "candle")]
     pub inference_engine: Option<std::sync::Arc<std::sync::Mutex<crate::inference::engine::InferenceEngine>>>,
+    #[cfg(feature = "candle")]
+    pub fused_engine: Option<std::sync::Arc<std::sync::Mutex<FusedEngineState>>>,
+}
+
+/// State for the fused endpoint: one engine reused across requests; loaded_path tracks which model is currently loaded.
+#[cfg(feature = "candle")]
+#[derive(Default)]
+pub struct FusedEngineState {
+    pub engine: crate::inference::engine::InferenceEngine,
+    pub loaded_path: Option<String>,
 }
 
 /// Load config from path. Returns default (empty model_ids) if file missing or invalid.

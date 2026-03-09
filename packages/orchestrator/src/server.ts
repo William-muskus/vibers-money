@@ -13,7 +13,7 @@ import {
   getBusinessIds,
 } from './registry.js';
 import { setBusinessFounder, canAccess as ownershipCanAccess } from './ownership.js';
-import { getUsage } from './usage-store.js';
+import { getUsage, recordInferenceUsage } from './usage-store.js';
 import {
   createBusinessAndSpawnCEO,
   spawnAgent,
@@ -153,6 +153,113 @@ app.get('/api/inference/health', async (_req: Request, res: Response) => {
   const requiredModels = [process.env.LOCAL_LLM_MODEL || 'mistral:7b'];
   const health = await checkInferenceHealth(config, requiredModels);
   res.json({ enabled: true, engine: config.type, ...health });
+});
+
+/** GET /api/inference/v1/models — Proxy to inference engine; for usage tracking use POST through this proxy. */
+app.get('/api/inference/v1/models', async (req: Request, res: Response) => {
+  const config = getInferenceConfig();
+  if (!config) {
+    res.status(503).json({ error: 'Local inference not configured; set LOCAL_LLM_API_BASE' });
+    return;
+  }
+  const base = config.apiBase.replace(/\/$/, '');
+  const url = `${base}/models`;
+  try {
+    const f = await fetch(url);
+    const data = await f.json();
+    res.status(f.status).json(data);
+  } catch (err) {
+    logger.warn('inference_proxy_models_error', { url, error: String((err as Error).message) });
+    res.status(502).json({ error: 'Inference engine unreachable' });
+  }
+});
+
+/** POST /api/inference/v1/chat/completions — Proxy to inference engine and record usage (business_id, role from query). */
+app.post('/api/inference/v1/chat/completions', async (req: Request, res: Response) => {
+  const config = getInferenceConfig();
+  if (!config) {
+    res.status(503).json({ error: 'Local inference not configured; set LOCAL_LLM_API_BASE' });
+    return;
+  }
+  const businessId = (req.query.business_id as string)?.trim() ?? '';
+  const role = (req.query.role as string)?.trim() ?? '';
+  const businessIdHeader = (req.headers['x-business-id'] as string)?.trim();
+  const roleHeader = (req.headers['x-agent-role'] as string)?.trim();
+  const businessIdFinal = businessId || businessIdHeader || '';
+  const roleFinal = role || roleHeader || '';
+  const base = config.apiBase.replace(/\/$/, '');
+  const url = `${base}/chat/completions`;
+  // Force streaming for all requests through the proxy (all Vibe/agent traffic). Token-by-token updates in CEO chat and tiles.
+  const bodyToSend = { ...(req.body as object), stream: true };
+  const stream = true;
+  const start = Date.now();
+  try {
+    const f = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyToSend),
+    });
+    if (!f.ok) {
+      const text = await f.text();
+      const contentType = f.headers.get('content-type');
+      if (contentType) res.setHeader('Content-Type', contentType);
+      res.status(f.status).send(text);
+      return;
+    }
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (!f.body) {
+        res.status(502).json({ error: 'No response body' });
+        return;
+      }
+      const reader = f.body.getReader();
+      try {
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        while (!(chunk = await reader.read()).done && chunk.value) {
+          res.write(Buffer.from(chunk.value));
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      res.end();
+      const latencyMs = Date.now() - start;
+      recordInferenceUsage({
+        business_id: businessIdFinal || 'unknown',
+        role: roleFinal || 'unknown',
+        model: process.env.LOCAL_LLM_MODEL || 'mistral:7b',
+        engine: config.type,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        latency_ms: latencyMs,
+      });
+      return;
+    }
+    const data = (await f.json()) as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      model?: string;
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const latencyMs = Date.now() - start;
+    const promptTokens = data.usage?.prompt_tokens ?? 0;
+    const completionTokens = data.usage?.completion_tokens ?? 0;
+    const model = data.model ?? process.env.LOCAL_LLM_MODEL ?? 'mistral:7b';
+    recordInferenceUsage({
+      business_id: businessIdFinal || 'unknown',
+      role: roleFinal || 'unknown',
+      model,
+      engine: config.type,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      latency_ms: latencyMs,
+    });
+    res.status(f.status).json(data);
+  } catch (err) {
+    logger.warn('inference_proxy_chat_error', { url, error: String((err as Error).message) });
+    res.status(502).json({ error: 'Inference engine unreachable' });
+  }
 });
 
 /** POST /api/business/create — Create business + spawn CEO. */

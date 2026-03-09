@@ -28,6 +28,17 @@ pub enum Stop {
     Multiple(Vec<String>),
 }
 
+impl Stop {
+    /// Returns stop strings as a slice (empty if none). Used to pass into engine generate methods.
+    pub fn as_strings(&self) -> Vec<String> {
+        match self {
+            Stop::Single(s) if !s.is_empty() => vec![s.clone()],
+            Stop::Multiple(v) => v.iter().filter(|s| !s.is_empty()).cloned().collect(),
+            _ => vec![],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,

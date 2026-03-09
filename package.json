@@ -15,7 +15,9 @@
     "dev:frontend": "npm run dev -w @vibers/frontend",
     "dev:all-windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-all.ps1",
     "build:inference": "cd packages/inference-engine && cargo build --release --features candle",
+    "build:inference-gpu": "node scripts/build-inference-gpu.js",
     "dev:inference": "cd packages/inference-engine && cargo run --release --features candle -- --config configs/roles.toml --port 8080 --log-json",
+    "dev:inference-gpu": "node scripts/dev-inference-gpu.js",
     "dev:inference-cpu": "cd packages/inference-engine && cargo run --release --features candle -- --config configs/roles.toml --port 8080"
   },
   "engines": {

@@ -43,8 +43,7 @@ Full review of `packages/inference-engine/` (OpenAI-compatible stub + Candle-rea
 
 **Request handling**
 
-- `temperature`, `max_tokens`, `stream`, `stop`, `tools`, `tool_choice`, `response_format` are accepted in types and deserialized. They are not yet used in the stub (expected until Candle is wired).
-- **ToolChoice enum:** OpenAI sends `tool_choice` as string `"none"` | `"auto"` or object `{ "type": "function", "function": { "name": "..." } }`. Current enum is `#[serde(untagged)]` with variants `None`, `Auto`, `Named { r#type, name }`. For string `"none"`/`"auto"`, serde may not match; consider a custom deserializer or accepting `Option<serde_json::Value>` and parsing manually so all OpenAI variants work.
+- `temperature`, `max_tokens`, `stream`, `stop`, `tools`, `tool_choice`, `response_format` are accepted in types. **`stop`** is applied: generation stops when decoded output ends with any stop string. Tools are parsed from model output when no proxy; tool_choice deserializer supports `"none"`/`"auto"`.
 
 ---
 
@@ -56,7 +55,7 @@ Full review of `packages/inference-engine/` (OpenAI-compatible stub + Candle-rea
 | **Role selection** | `chat.rs` | You take the *last* user message. Matches common “last user turn” semantics. Document that system/assistant messages are ignored in the stub. |
 | **Streaming panic** | `chat.rs:109` | `Response::builder().body(body).unwrap()` can panic if the builder is invalid. You only set valid headers and body; low risk. Prefer `expect("valid response")` or `?` on a Result for clearer errors. |
 | **SystemTime** | `chat.rs:16–21` | `unix_ts()` uses `duration_since(UNIX_EPOCH).unwrap_or_default()` — only panics if system time is before 1970. Acceptable for a server. |
-| **Fused endpoint** | `fused.rs` | Always returns `ok: false` with an error message. Callers (Swarm Bus) should treat non-ok as “fall back to normal path”. Document the expected response shape for when the endpoint is implemented. |
+| **Fused endpoint** | `fused.rs` | **Implemented:** loads from_role and to_role models from roles.toml, runs A → bridge → B; reuses a shared engine. Callers (Swarm Bus) treat non-ok as “fall back to normal path”. |
 
 ---
 
@@ -74,7 +73,7 @@ Full review of `packages/inference-engine/` (OpenAI-compatible stub + Candle-rea
 |-------|--------|----------------|
 | **CORS** | `CorsLayer::permissive()` | Allows all origins/methods/headers. Fine for local/Docker; for production, restrict to the frontend/orchestrator origins. |
 | **Request body limit** | None | Axum does not limit JSON body size by default. Add a size limit (e.g. 1–2 MiB for chat) to avoid DoS via huge payloads. |
-| **Timeouts** | None | No request or inference timeout. When wiring Candle, add timeouts so a stuck model doesn’t hold connections forever. |
+| **Timeouts** | `VIBERS_INFERENCE_TIMEOUT_SECS` | Streaming inference wrapped in `tokio::time::timeout` (default 300s). Configurable via env. |
 | **Logging** | `tracing` + optional JSON | Good. Avoid logging full message content in production (PII); log lengths or hashes if needed. |
 
 ---
@@ -110,11 +109,11 @@ Full review of `packages/inference-engine/` (OpenAI-compatible stub + Candle-rea
 |-----------|--------|
 | GET `/v1/models` | Done (env-based). |
 | POST `/v1/chat/completions` (stream + non-stream) | Done (stub). |
-| `model`, `messages`, `temperature`, `max_tokens`, `stream`, `stop` | Accepted in types; stub ignores most. |
+| `model`, `messages`, `temperature`, `max_tokens`, `stream`, `stop` | Accepted; **`stop`** applied in engine generate/stream/constrained/speculative. |
 | `tools` / `tool_choice` | Accepted; not implemented (stub). |
 | `response_format: { type: "json_object" }` | Accepted; Phase 5 trigger not wired. |
 | Streaming format `data: {"choices":[{"delta":{"content":"..."}}]}\n\n` | Done; add final chunk and optional `[DONE]`. |
-| POST `/v1/fused` | Stub returns “not implemented”. |
+| POST `/v1/fused` | **Implemented:** A→B pipeline; loads models from roles.toml, reuses fused engine. |
 | `--config`, `--port`, `--log-json` | Implemented. |
 | Structured JSON logging | Implemented with `tracing-subscriber` JSON layer. |
 | inference/ stubs (engine, sampling, speculative, constrained) | Present. |

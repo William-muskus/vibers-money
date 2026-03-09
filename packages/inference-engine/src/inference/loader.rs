@@ -40,7 +40,14 @@ pub fn load_gguf_llama(
     use_cuda: bool,
 ) -> Result<LoadedModel, String> {
     let device = if use_cuda {
-        Device::new_cuda(0).map_err(|e| e.to_string())?
+        #[cfg(feature = "cuda")]
+        {
+            Device::new_cuda(0).map_err(|e| e.to_string())?
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            return Err("CUDA requested but binary built without --features cuda. Rebuild with: cargo build --release --features candle,cuda".to_string());
+        }
     } else {
         Device::Cpu
     };
