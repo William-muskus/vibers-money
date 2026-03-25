@@ -51,6 +51,7 @@ export interface StreamEvent {
 export interface AskUserQuestion {
   question: string;
   header?: string;
-  options: { label: string; description?: string }[];
+  /** Predefined choices; omit or empty for free-text (founder types in chat). */
+  options?: { label: string; description?: string }[];
   multi_select?: boolean;
 }

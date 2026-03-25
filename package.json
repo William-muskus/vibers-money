@@ -13,6 +13,8 @@
     "dev:swarm-bus": "npm run dev -w @vibers/swarm-bus-mcp",
     "dev:computer-use": "npm run dev -w @vibers/computer-use-mcp",
     "dev:frontend": "npm run dev -w @vibers/frontend",
+    "dev:inference": "npm run dev:inference -w @vibers/inference-engine",
+    "dev:redis": "powershell -ExecutionPolicy Bypass -File ./scripts/start-redis-if-needed.ps1",
     "dev:all-windows": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-all.ps1"
   },
   "engines": {

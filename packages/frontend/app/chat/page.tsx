@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { getMyBusinessIds } from '@/lib/local-businesses';
+import { getMyBusinessIds, syncWithServerAndRemoveDeleted } from '@/lib/local-businesses';
 import { useEffect, useState } from 'react';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 
 export default function ChatListPage() {
-  const [ids, setIds] = useState<string[]>([]);
+  const [ids, setIds] = useState<string[] | null>(null);
   useEffect(() => {
-    setIds(getMyBusinessIds());
+    void syncWithServerAndRemoveDeleted().then((fromServer) => {
+      setIds(fromServer ?? getMyBusinessIds());
+    });
   }, []);
 
   return (
@@ -16,7 +18,9 @@ export default function ChatListPage() {
       <ChatSidebar />
       <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
         <h1 className="text-2xl font-semibold text-white">Chat</h1>
-        {ids.length > 0 ? (
+        {ids === null ? (
+          <p className="text-white/70">Loading businesses…</p>
+        ) : ids.length > 0 ? (
           <div className="flex flex-col gap-2">
             <p className="text-white/70">Pick a business to chat with your CEO:</p>
             <ul className="flex flex-col gap-2">

@@ -67,7 +67,7 @@ export default function AdminPage() {
                 </div>
                 {selectedBusinessId ? (
                   <div className="h-[320px] overflow-hidden rounded-lg border border-white/10">
-                    <ChatView businessId={selectedBusinessId} />
+                    <ChatView key={selectedBusinessId} businessId={selectedBusinessId} />
                   </div>
                 ) : (
                   <p className="text-sm text-white/50">Select a business to chat with the CEO.</p>

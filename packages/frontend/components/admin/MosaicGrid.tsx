@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { getAdminStats, getAdminAgents, adminStreamUrl } from '@/lib/admin-api';
+import { getAdminStats, getAdminAgents, getBusinessAgentKeys, adminStreamUrl } from '@/lib/admin-api';
 import { subscribeStream, type StreamEvent } from '@/lib/sse';
 import AgentTile from './AgentTile';
 import OrgTreeTile from './OrgTreeTile';
@@ -80,13 +80,26 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
     let mounted = true;
     async function fetchAll() {
       try {
-        const [agentsData, statsData] = await Promise.all([getAdminAgents(), getAdminStats()]);
-        if (!mounted) return;
-        setAllAgentKeys(agentsData.agents || []);
-        setStats({
-          businessCount: statsData.businessCount ?? 0,
-          agentCount: statsData.agentCount ?? 0,
-        });
+        if (businessId) {
+          const [agentsData, statsData] = await Promise.all([
+            getBusinessAgentKeys(businessId),
+            getAdminStats(),
+          ]);
+          if (!mounted) return;
+          setAllAgentKeys(agentsData.agents || []);
+          setStats({
+            businessCount: statsData.businessCount ?? 0,
+            agentCount: statsData.agentCount ?? 0,
+          });
+        } else {
+          const [agentsData, statsData] = await Promise.all([getAdminAgents(), getAdminStats()]);
+          if (!mounted) return;
+          setAllAgentKeys(agentsData.agents || []);
+          setStats({
+            businessCount: statsData.businessCount ?? 0,
+            agentCount: statsData.agentCount ?? 0,
+          });
+        }
       } catch {
         // ignore
       }
@@ -97,7 +110,7 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
       mounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
     const unsubscribe = subscribeStream(adminStreamUrl(), (event: StreamEvent) => {
@@ -132,7 +145,7 @@ export default function MosaicGrid({ businessId }: { businessId?: string }) {
           </>
         )}
       </div>
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden">
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {tileCount === 0 ? (
           <p className="py-6 text-center text-sm text-white/50">
             {businessId ? `No agents yet for ${businessId}.` : 'No agents yet. Create a business from the home page.'}

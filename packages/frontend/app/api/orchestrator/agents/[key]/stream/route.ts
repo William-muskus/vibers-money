@@ -2,11 +2,12 @@
  * SSE stream proxy — per-agent stream from orchestrator (avoids CORS).
  */
 import { getFounderIdFromRequest } from '@/lib/auth-server';
+import { type NextRequest } from 'next/server';
 
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
 
 export async function GET(
-  req: Request,
+  req: NextRequest,
   context: { params: Promise<{ key: string }> },
 ) {
   const founderId = await getFounderIdFromRequest(req);

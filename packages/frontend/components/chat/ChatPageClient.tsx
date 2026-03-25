@@ -9,9 +9,14 @@ import QRCodeDisplay from '@/components/QRCodeDisplay';
 import AgentTileMosaic from '@/components/background/AgentTileMosaic';
 import MosaicGrid from '@/components/admin/MosaicGrid';
 import SwarmFeed from '@/components/admin/SwarmFeed';
-import { getAdminAgents } from '@/lib/admin-api';
+import { getBusinessAgentKeys } from '@/lib/admin-api';
 import { getBusinessStatus, pauseBusiness, resumeBusiness } from '@/lib/api';
-import { canAccessBusiness, canAccessBusinessAsync, getMyBusinessIds } from '@/lib/local-businesses';
+import {
+  canAccessBusiness,
+  canAccessBusinessAsync,
+  getMyBusinessIds,
+  syncWithServerAndRemoveDeleted,
+} from '@/lib/local-businesses';
 
 const MOSAIC_WIDTH_KEY = 'chat-mosaic-width';
 const MIN_MOSAIC_PX = 280;
@@ -117,19 +122,23 @@ export default function ChatPageClient({
     setChatUrl(`${window.location.origin}/chat/${businessId}`);
   }, [businessId]);
 
+  // Revalidate against server list when route/business changes (nav bar mounted = fresh poll).
   useEffect(() => {
     if (!businessId) {
       setAllowed(false);
       return;
     }
-    if (canAccessBusiness(businessId)) {
-      setAllowed(true);
-      return;
-    }
     let cancelled = false;
-    canAccessBusinessAsync(businessId).then((ok) => {
+    (async () => {
+      await syncWithServerAndRemoveDeleted();
+      if (cancelled) return;
+      if (canAccessBusiness(businessId)) {
+        setAllowed(true);
+        return;
+      }
+      const ok = await canAccessBusinessAsync(businessId);
       if (!cancelled) setAllowed(ok);
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -146,21 +155,33 @@ export default function ChatPageClient({
     }
   }, [businessId, initialMessage, router]);
 
+  // Poll server business list + agent counts while chat is open (keeps nav tallies in sync after deletes).
   useEffect(() => {
-    function fetchCounts() {
-      setMyBusinessCount(getMyBusinessIds().length);
-      getAdminAgents()
-        .then(({ agents }) => {
-          const id = businessId.trim();
-          const prefix = id + '--';
-          setAgentsInThisBusiness(agents.filter((key) => key.startsWith(prefix)).length);
-        })
-        .catch(() => {});
-    }
     if (!businessId) return;
-    fetchCounts();
-    const interval = setInterval(fetchCounts, 10000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    async function fetchCounts() {
+      await syncWithServerAndRemoveDeleted();
+      if (cancelled) return;
+      setMyBusinessCount(getMyBusinessIds().length);
+      const id = businessId.trim();
+      if (!canAccessBusiness(id)) {
+        const ok = await canAccessBusinessAsync(id);
+        if (!cancelled) setAllowed(ok);
+      }
+      try {
+        const { agents } = await getBusinessAgentKeys(id);
+        if (cancelled) return;
+        setAgentsInThisBusiness(agents.length);
+      } catch {
+        /* orchestrator unreachable */
+      }
+    }
+    void fetchCounts();
+    const interval = setInterval(() => void fetchCounts(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [businessId]);
 
   async function togglePause() {
@@ -262,7 +283,7 @@ export default function ChatPageClient({
         )}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="min-h-0 min-w-0 flex-1">
-            <ChatView businessId={businessId} initialMessage={initialMessage} />
+            <ChatView key={businessId} businessId={businessId} initialMessage={initialMessage} />
           </div>
           {showMosaic && (
             <>
@@ -271,7 +292,7 @@ export default function ChatPageClient({
                   role="separator"
                   aria-label="Resize mosaic panel"
                   onMouseDown={startResize}
-                  className="w-1 flex-shrink-0 select-none bg-transparent"
+                  className="w-1 shrink-0 select-none bg-transparent"
                 />
               </div>
               <aside

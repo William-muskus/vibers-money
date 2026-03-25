@@ -1,4 +1,4 @@
-# Open 4 PowerShell windows: orchestrator, swarm-bus-mcp, computer-use-mcp, frontend
+# Open 5 PowerShell windows: orchestrator, swarm-bus-mcp, computer-use-mcp, frontend, inference (llama-server)
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $cmd = "Set-Location '$root'; npm run"
 
@@ -6,16 +6,18 @@ $titles = @(
   "Orchestrator",
   "Swarm Bus MCP",
   "Computer Use MCP",
-  "Frontend"
+  "Frontend",
+  "Inference (llama-server)"
 )
 $scripts = @(
   "dev:orchestrator",
   "dev:swarm-bus",
   "dev:computer-use",
-  "dev:frontend"
+  "dev:frontend",
+  "dev:inference"
 )
 
-for ($i = 0; $i -lt 4; $i++) {
+for ($i = 0; $i -lt 5; $i++) {
   Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",

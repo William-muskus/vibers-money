@@ -34,8 +34,8 @@ export async function getInbox(agentId: string): Promise<Message[]> {
   const redis = await getRedis();
   if (redis) {
     const raw = await redis.lrange(`${INBOX_PREFIX}${agentId}`, 0, -1);
-    const list = raw.map((s) => JSON.parse(s) as Message);
-    return list.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    const list = raw.map((s: string) => JSON.parse(s) as Message);
+    return list.sort((a: Message, b: Message) => (a.seq ?? 0) - (b.seq ?? 0));
   }
   const list = inboxes.get(agentId) ?? [];
   return [...list].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));

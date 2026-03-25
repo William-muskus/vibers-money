@@ -12,8 +12,12 @@ import { RingBuffer } from './ring-buffer.js';
 import type { NDJSONMessage, StreamEvent, AgentConfig } from './types.js';
 import { logger } from './logger.js';
 import { unregisterAgent } from './registry.js';
+import { CEO_ONBOARDING_SECTION, readCeoOnboardingState, markCeoOnboardingFirstFounderTurnHandled } from './ceo-onboarding.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** CEO first cycle if config.initialPrompt missing (tests / misconfig). */
+const CEO_FIRST_CYCLE_WITHOUT_CONFIG_PROMPT = CEO_ONBOARDING_SECTION;
 
 function getWindowsVibePath(): string | null {
   try {
@@ -37,6 +41,22 @@ const vibeNotFoundHintLogged = new Set<string>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * llama.cpp / local OpenAI-compatible backends often fail with env/model issues, not agent code.
+ * Do not count these toward circuit-break (5 strikes) so a context bump or smaller tool payloads can recover.
+ */
+function isTransientLocalLlmFailure(stderr: string): boolean {
+  if (!stderr.trim()) return false;
+  return (
+    /context size has been exceeded/i.test(stderr) ||
+    /failed to parse tool call arguments/i.test(stderr) ||
+    /parse_error.*parse error/i.test(stderr) ||
+    /missing closing quote/i.test(stderr) ||
+    /unexpected end of input/i.test(stderr) ||
+    /truncated\s*=\s*1/i.test(stderr)
+  );
 }
 
 /**
@@ -77,6 +97,12 @@ export class AgentProcess {
   /** Queue of real prompts (founder messages, swarm bus events). */
   private pendingPrompts: string[] = [];
 
+  /**
+   * While CEO waits for a founder reply (`set_awaiting_founder` MCP tool),
+   * non-founder prompts (e.g. Swarm wake → inbox check) are held here and appended after the founder turn.
+   */
+  private deferredPendingPrompts: string[] = [];
+
   /** Resolves to wake the agent from idle sleep. */
   private wakeResolve: (() => void) | null = null;
 
@@ -85,6 +111,12 @@ export class AgentProcess {
 
   /** Resolves when resume() is called so the loop can continue. */
   private resumeResolve: (() => void) | null = null;
+
+  /**
+   * When true, CEO idle does not use the POLL timer (no synthetic “check inbox” between founder turns).
+   * Set via orchestrator MCP `set_awaiting_founder`; cleared when a founder chat message is enqueued.
+   */
+  private waitingForFounderAnswer = false;
 
   /** Consecutive non-zero exits; reset on success. Used for exponential backoff and circuit breaker. */
   private consecutiveFailures = 0;
@@ -114,6 +146,8 @@ export class AgentProcess {
     for (const sub of this.subscribers) {
       try {
         sub.write(`data: ${data}\n\n`);
+        // When compression middleware adds flush(), avoid buffering token-sized SSE chunks
+        (sub as unknown as { flush?: () => void }).flush?.();
         sent++;
       } catch {
         this.subscribers.delete(sub);
@@ -149,9 +183,6 @@ export class AgentProcess {
       this.broadcast({ type: 'lifecycle', stage: 'agent_thinking', agent: this.key });
     }
 
-    // ask_user_question is CEO-only (founder questions); in this product the CEO has it disabled
-    // and asks in message content. Other agents use Swarm Bus to ask each other. No detection here.
-
     this.activityLog.push(msg);
 
     if (msg.type === 'tool_use' && typeof msg.name === 'string' && msg.name.startsWith('mcp_computer_')) {
@@ -179,6 +210,7 @@ export class AgentProcess {
         subscriberCount: this.subscribers.size,
       });
     }
+
     this.broadcast({ type: 'activity', msg, agent: this.key });
   }
 
@@ -198,10 +230,72 @@ export class AgentProcess {
 
   /**
    * Enqueue a real prompt (founder message, swarm bus event) and wake the agent.
+   * CEO: while waiting for a founder answer, non-founder prompts are deferred until the founder message is enqueued.
    */
   enqueuePrompt(text: string): void {
+    const isFounder = text.startsWith('The founder sent you a message:');
+
+    if (this.agentId === 'ceo' && isFounder) {
+      this.waitingForFounderAnswer = false;
+      logger.info('ceo_waiting_for_founder', { key: this.key, waiting: false, reason: 'founder_message' });
+      this.pendingPrompts.push(text);
+      while (this.deferredPendingPrompts.length > 0) {
+        const next = this.deferredPendingPrompts.shift()!;
+        logger.info('ceo_flush_deferred_prompt', { key: this.key, preview: next.slice(0, 100) });
+        this.pendingPrompts.push(next);
+      }
+      this.wake();
+      return;
+    }
+
+    if (this.agentId === 'ceo' && this.waitingForFounderAnswer) {
+      logger.info('ceo_prompt_deferred_until_founder', {
+        key: this.key,
+        deferredAfter: this.deferredPendingPrompts.length + 1,
+        preview: text.slice(0, 120),
+      });
+      this.deferredPendingPrompts.push(text);
+      return;
+    }
+
     this.pendingPrompts.push(text);
     this.wake();
+  }
+
+  /**
+   * Founder chat from POST /api/business/:id/message — CEO gets a one-time Onboarding block on first delivery only.
+   */
+  enqueueFounderMessageFromUser(content: string): void {
+    const prefix = 'The founder sent you a message:';
+    if (this.agentId !== 'ceo') {
+      this.enqueuePrompt(`${prefix} "${content}".`);
+      return;
+    }
+    const state = readCeoOnboardingState(this.config.workdir);
+    const short = `${prefix} "${content}".`;
+    const text = state.firstFounderTurnHandled ? short : `${CEO_ONBOARDING_SECTION}\n\n${short}`;
+    if (!state.firstFounderTurnHandled) {
+      markCeoOnboardingFirstFounderTurnHandled(this.config.workdir);
+    }
+    this.waitingForFounderAnswer = false;
+    logger.info('ceo_waiting_for_founder', { key: this.key, waiting: false, reason: 'founder_message' });
+    this.pendingPrompts.push(text);
+    while (this.deferredPendingPrompts.length > 0) {
+      const next = this.deferredPendingPrompts.shift()!;
+      logger.info('ceo_flush_deferred_prompt', { key: this.key, preview: next.slice(0, 100) });
+      this.pendingPrompts.push(next);
+    }
+    this.wake();
+  }
+
+  /** Override or tests: set whether CEO should skip timer-driven idle (wait for founder in chat). */
+  setWaitingForFounderAnswer(value: boolean): void {
+    this.waitingForFounderAnswer = value;
+    logger.info('ceo_waiting_for_founder', { key: this.key, waiting: value, reason: 'manual' });
+  }
+
+  isWaitingForFounderAnswer(): boolean {
+    return this.waitingForFounderAnswer;
   }
 
   /**
@@ -252,28 +346,45 @@ export class AgentProcess {
       let prompt: string;
 
       if (!this.sessionId) {
-        // First cycle: use the initial prompt from config
-        prompt = this.config.initialPrompt
-          ?? 'Read your AGENTS.md and begin your work. Check your messages and todos.';
+        prompt =
+          this.config.initialPrompt ??
+          (this.agentId === 'ceo'
+            ? CEO_FIRST_CYCLE_WITHOUT_CONFIG_PROMPT
+            : 'Read your AGENTS.md and begin your work. Check your messages and todos.');
       } else if (this.pendingPrompts.length > 0) {
         prompt = this.pendingPrompts.shift()!;
       } else {
-        // No work — idle until woken or poll interval
-        logger.info('agent_idle', { key: this.key, pollMs: POLL_INTERVAL_MS });
+        // No queued work — idle until timer or wake. CEO skips the timer while waiting for the founder
+        // in chat (clarifying questions), so we don't inject "check inbox" mid-conversation.
+        const ceoWakeOnly = this.agentId === 'ceo' && this.waitingForFounderAnswer;
 
-        await Promise.race([
-          sleep(POLL_INTERVAL_MS),
-          new Promise<void>((resolve) => { this.wakeResolve = resolve; }),
-        ]);
+        if (ceoWakeOnly) {
+          logger.info('agent_idle_ceo', { key: this.key, mode: 'wake_only', waitingForFounderAnswer: true });
+          await new Promise<void>((resolve) => {
+            this.wakeResolve = resolve;
+          });
+        } else {
+          logger.info('agent_idle', { key: this.key, pollMs: POLL_INTERVAL_MS });
+          await Promise.race([
+            sleep(POLL_INTERVAL_MS),
+            new Promise<void>((resolve) => {
+              this.wakeResolve = resolve;
+            }),
+          ]);
+        }
         this.wakeResolve = null;
         if (!this.running) break;
         if (this.paused) continue;
 
         if (this.pendingPrompts.length > 0) {
           prompt = this.pendingPrompts.shift()!;
+        } else if (this.agentId === 'ceo' && this.waitingForFounderAnswer) {
+          continue;
         } else if (this.agentId === 'ceo') {
-          prompt =
-            'Check your swarm bus inbox (swarm_check_inbox) and respond to your team. Keep responses concise. Synthesize updates and give brief next steps or acknowledgments.';
+          const onboard = readCeoOnboardingState(this.config.workdir);
+          prompt = !onboard.firstFounderTurnHandled
+            ? 'Onboarding: clarify if needed, then spawn directors.'
+            : 'Spawn missing directors if any; then swarm_list_agents, swarm_check_inbox, brief replies. No long repeated plans.';
         } else {
           prompt =
             'Check your messages and todos. If you have new instructions from the CEO, follow them. Otherwise: work from your objectives — create new tasks with todo_add from your macro objectives, execute work with todo_complete, use your tools. Only report to the CEO when you have new progress or completed a milestone; do not send the same status update repeatedly.';
@@ -445,28 +556,38 @@ export class AgentProcess {
       const hasWork = this.pendingPrompts.length > 0;
 
       if (exitCode !== 0 && exitCode !== null) {
-        this.consecutiveFailures += 1;
-        const delay = Math.min(
-          AgentProcess.BACKOFF_BASE_MS * Math.pow(2, this.consecutiveFailures - 1),
-          AgentProcess.BACKOFF_CAP_MS,
-        );
-        logger.info('vibe_exit', {
-          key: this.key,
-          exitCode,
-          consecutiveFailures: this.consecutiveFailures,
-          backoffMs: delay,
-          nextAction: this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES ? 'circuit_break' : 'retry',
-        });
-        if (this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES) {
-          this.pause();
-          try {
-            await this.config.onCircuitBreak?.(this.businessId, this.key, this.agentId, this.consecutiveFailures);
-          } catch (err) {
-            logger.warn('onCircuitBreak_error', { key: this.key, error: String((err as Error).message) });
+        const transientLlm = isTransientLocalLlmFailure(stderrBuffer);
+        if (transientLlm) {
+          logger.warn('vibe_exit_transient_llm', {
+            key: this.key,
+            exitCode,
+            hint: 'Not counting toward circuit-break. Raise LLAMA_CONTEXT_SIZE; keep tool args (write_file) small — see local-llm-constraints skill.',
+          });
+          await sleep(5000);
+        } else {
+          this.consecutiveFailures += 1;
+          const delay = Math.min(
+            AgentProcess.BACKOFF_BASE_MS * Math.pow(2, this.consecutiveFailures - 1),
+            AgentProcess.BACKOFF_CAP_MS,
+          );
+          logger.info('vibe_exit', {
+            key: this.key,
+            exitCode,
+            consecutiveFailures: this.consecutiveFailures,
+            backoffMs: delay,
+            nextAction: this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES ? 'circuit_break' : 'retry',
+          });
+          if (this.consecutiveFailures >= AgentProcess.MAX_CONSECUTIVE_FAILURES) {
+            this.pause();
+            try {
+              await this.config.onCircuitBreak?.(this.businessId, this.key, this.agentId, this.consecutiveFailures);
+            } catch (err) {
+              logger.warn('onCircuitBreak_error', { key: this.key, error: String((err as Error).message) });
+            }
+            return;
           }
-          return;
+          await sleep(delay);
         }
-        await sleep(delay);
       } else {
         this.consecutiveFailures = 0;
         logger.info('vibe_exit', {
@@ -487,6 +608,7 @@ export class AgentProcess {
   stop(): void {
     logger.info('agent_stop', { key: this.key });
     this.running = false;
+    this.deferredPendingPrompts = [];
     this.wake();
     if (this.process) {
       this.process.kill();

@@ -19,6 +19,7 @@ const CREATE_BUSINESS_TIMEOUT_MS = 90_000;
 const SEND_MESSAGE_TIMEOUT_MS = 25_000;
 
 export async function createBusiness(name: string, founderPrompt?: string): Promise<{ businessId: string; agentKey: string }> {
+  const sid = typeof window === 'undefined' ? '' : getOrCreateFounderSessionId();
   try {
     const res = await fetchWithRateLimitAndRetry(
       `${ORCHESTRATOR_API}/business/create`,
@@ -28,6 +29,7 @@ export async function createBusiness(name: string, founderPrompt?: string): Prom
         body: JSON.stringify({
           name,
           founder_prompt: founderPrompt || name,
+          ...(sid ? { founder_session_id: sid } : {}),
         }),
       },
       { timeoutMs: CREATE_BUSINESS_TIMEOUT_MS },

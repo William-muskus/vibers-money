@@ -8,6 +8,8 @@ vi.mock('../src/spawner.js', () => ({
   createBusinessAndSpawnCEO: vi.fn().mockResolvedValue({ businessId: 'test-co', agentKey: 'test-co--ceo' }),
   spawnAgent: vi.fn().mockResolvedValue({ agent_key: 'test-co--mkt' }),
   injectFounderMessage: vi.fn().mockResolvedValue(undefined),
+  listBusinessIdsFromDisk: vi.fn().mockResolvedValue([]),
+  getBusinessTree: vi.fn().mockResolvedValue([]),
 }));
 
 const mockProcess = (key: string, businessId: string): AgentProcess =>
@@ -17,9 +19,11 @@ const mockProcess = (key: string, businessId: string): AgentProcess =>
     subscribe: vi.fn(),
     broadcast: vi.fn(),
     isRunningCycle: vi.fn().mockReturnValue(false),
+    isWaitingForFounderAnswer: vi.fn().mockReturnValue(false),
     start: vi.fn().mockResolvedValue(undefined),
     wake: vi.fn(),
     enqueuePrompt: vi.fn(),
+    enqueueFounderMessageFromUser: vi.fn(),
     agentId: key.split('--')[1] ?? key,
   }) as unknown as AgentProcess;
 
@@ -102,6 +106,18 @@ describe('orchestrator API', () => {
   it('GET /api/business/:id/stream returns 404 when no agents', async () => {
     const res = await request(app).get('/api/business/nobiz/stream');
     expect(res.status).toBe(404);
+  });
+
+  it('GET /api/agents/:key/cycle returns 404 when agent not found', async () => {
+    const res = await request(app).get('/api/agents/missing--ceo/cycle');
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/agents/:key/cycle returns running from isRunningCycle()', async () => {
+    registerAgent(mockProcess('cycle-test--ceo', 'cycle-test'));
+    const res = await request(app).get('/api/agents/cycle-test--ceo/cycle');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ running: false });
   });
 
   it('POST /api/agents/:key/wake returns 404 when agent not found', async () => {

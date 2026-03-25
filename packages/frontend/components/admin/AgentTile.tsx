@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { agentStreamUrl } from '@/lib/admin-api';
 import { subscribeStream, type StreamEvent } from '@/lib/sse';
 import ActivityLine from './ActivityLine';
+import { roleTitleFromSlug } from '@/lib/role-title';
 
 type ActivityMsg = Record<string, unknown>;
 
@@ -67,7 +68,8 @@ export default function AgentTile({
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [activities]);
 
-  const roleName = agentKey.includes('--') ? agentKey.split('--')[1] : agentKey;
+  const roleSlug = agentKey.includes('--') ? agentKey.split('--')[1]! : agentKey;
+  const roleName = roleTitleFromSlug(roleSlug);
 
   return (
     <div

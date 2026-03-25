@@ -121,8 +121,7 @@ npm run dev:frontend
 
 **(Optional) Terminal 4 — Computer Use** (for browser automation)
 
-- Start Chrome with remote debugging: `chrome --remote-debugging-port=9222` (or `google-chrome` on Linux).
-- Run: `npm run dev:computer-use`
+- Run: `npm run dev:computer-use` — starts the MCP on port **3200** and, if nothing is already listening on **`CDP_PORT`** (default **9222**), launches **Google Chrome** with `--remote-debugging-port` (local `CDP_HOST` only). Set **`COMPUTER_USE_AUTO_CHROME=0`** in `.env` if you prefer to start Chrome yourself.
 
 ### 4. Open the app
 

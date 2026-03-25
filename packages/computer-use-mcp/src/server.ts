@@ -1,7 +1,7 @@
 /**
  * Computer Use MCP — screenshot, navigate, click, type via CDP.
  */
-import 'dotenv/config';
+import './load-env.js';
 import { randomUUID } from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
@@ -15,6 +15,7 @@ import { createInteractionTools } from './tools/interaction.js';
 import { createTabTools } from './tools/tabs.js';
 import { createAdvancedInteractionTools } from './tools/advanced-interaction.js';
 import { setAllowlist } from './security/allowlist.js';
+import { ensureChromeWithRemoteDebugging, killLaunchedChrome } from './chrome-launcher.js';
 import { logger } from './logger.js';
 
 const app = express();
@@ -159,6 +160,19 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 const PORT = Number(process.env.COMPUTER_USE_PORT) || 3200;
+
+function registerShutdownHooks(): void {
+  const onShutdown = () => {
+    killLaunchedChrome();
+  };
+  process.on('SIGINT', onShutdown);
+  process.on('SIGTERM', onShutdown);
+  process.on('exit', onShutdown);
+}
+
+await ensureChromeWithRemoteDebugging();
+registerShutdownHooks();
+
 app.listen(PORT, () => {
   logger.info('listening', { port: PORT, url: `http://localhost:${PORT}` });
 });

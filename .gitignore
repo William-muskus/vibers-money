@@ -8,6 +8,13 @@ dist/
 out/
 *.tsbuildinfo
 
+# llama.cpp prebuilt (install-llama-server.ps1)
+packages/inference-engine/bin/
+
+# Local GGUF weights (large; set MODEL_PATH in .env)
+models/
+*.gguf
+
 # Project docs (local-only in this repo)
 docs/
 documentation/

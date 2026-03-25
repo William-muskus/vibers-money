@@ -1,13 +1,19 @@
 'use client';
 
-type ActivityMsg = {
+import { textFromAssistantPayload } from '@/lib/chat-content';
+import { formatRoleForDisplay } from '@/lib/role-title';
+
+export type ActivityMsg = {
   role?: string;
   content?: string;
+  reasoning_content?: string;
   type?: string;
   name?: string;
   input?: unknown;
   arguments?: string;
   data?: string;
+  /** tool_result / some Vibe lines */
+  output?: unknown;
 };
 
 const MAX_CMD_LEN = 220;
@@ -15,7 +21,7 @@ const MAX_GENERIC_LEN = 100;
 
 const lineBase = 'text-[13px] leading-relaxed';
 
-function getToolArgs(msg: ActivityMsg): Record<string, unknown> {
+export function getToolArgs(msg: ActivityMsg): Record<string, unknown> {
   if (msg.input && typeof msg.input === 'object' && !Array.isArray(msg.input)) {
     return msg.input as Record<string, unknown>;
   }
@@ -31,18 +37,27 @@ function getToolArgs(msg: ActivityMsg): Record<string, unknown> {
 }
 
 export default function ActivityLine({ msg }: { msg: ActivityMsg }) {
-  if (msg.role === 'assistant' && msg.content) {
-    const s = String(msg.content).slice(0, 120);
-    const more = (msg.content as string).length > 120 ? '…' : '';
+  if (msg.role === 'assistant') {
+    const full = textFromAssistantPayload(msg);
+    if (!full.trim()) return null;
+    const s = full.slice(0, 120);
+    const more = full.length > 120 ? '…' : '';
     return (
       <div className={`${lineBase} text-white/85`}>
         {s}{more}
       </div>
     );
   }
-  if (msg.type === 'tool_use' && msg.name) {
+  if (msg.type === 'tool_use') {
     const args = getToolArgs(msg);
     const name = msg.name;
+    if (!name) {
+      return (
+        <div className={`${lineBase} text-sky-400/95`}>
+          <span className="text-sky-500/70">▶</span> tool_use
+        </div>
+      );
+    }
 
     if (name === 'bash' || name === 'run_terminal_cmd') {
       const cmd = (args.command ?? args.cmd ?? args.command_line ?? '') as string;
@@ -74,9 +89,10 @@ export default function ActivityLine({ msg }: { msg: ActivityMsg }) {
     // Swarm / skill-related tools — show intent clearly
     if (name === 'mcp_swarm_spawn_agent' || name === 'swarm_spawn_agent') {
       const role = (args.role ?? args.agent_role ?? '') as string;
+      const label = role ? formatRoleForDisplay(role) : '…';
       return (
         <div className={`${lineBase} text-violet-400/95`}>
-          <span className="text-violet-500/80">▶</span> Spawn agent: <span className="font-medium">{role || '…'}</span>
+          <span className="text-violet-500/80">▶</span> Spawn agent: <span className="font-medium">{label}</span>
         </div>
       );
     }
@@ -121,7 +137,14 @@ export default function ActivityLine({ msg }: { msg: ActivityMsg }) {
       </div>
     );
   }
-  if (msg.type === 'tool_result' && msg.name) {
+  if (msg.type === 'tool_result') {
+    if (!msg.name) {
+      return (
+        <div className={`${lineBase} text-emerald-400/95`}>
+          <span className="text-emerald-500/80">✓</span> tool_result
+        </div>
+      );
+    }
     return (
       <div className={`${lineBase} text-emerald-400/95`}>
         <span className="text-emerald-500/80">✓</span> {msg.name} completed

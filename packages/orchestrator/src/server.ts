@@ -22,7 +22,15 @@ import {
   listBusinessIdsFromDisk,
 } from './spawner.js';
 import { deriveConceptSlug } from './derive-concept-slug.js';
+import {
+  getInferenceConfig,
+  getLocalLlmModel,
+  checkInferenceHealthWithRetry,
+} from './inference-engine.js';
 import { logger } from './logger.js';
+import { registerAdminSseConnection } from './admin-sse.js';
+import { getMergedAgentKeysForBusiness } from './mosaic-agent-keys.js';
+import { mountOrchestratorMcp } from './orchestrator-mcp.js';
 
 /** Resolve agents by business id. */
 function getProcessesForBusiness(id: string): ReturnType<typeof getAgentsByBusiness> {
@@ -35,11 +43,13 @@ app.use(
   cors({
     origin: FRONTEND_ORIGIN ?? true,
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Founder-Session-Id'],
+    allowedHeaders: ['Content-Type', 'X-Founder-Session-Id', 'mcp-session-id', 'X-Agent-Id', 'X-Business-Id'],
     exposedHeaders: ['Content-Type'],
   }),
 );
 app.use(express.json());
+
+mountOrchestratorMcp(app);
 
 app.use((req: Request, _res: Response, next) => {
   logger.debug('request', { method: req.method, path: req.path });
@@ -76,10 +86,7 @@ app.get('/api/agents/:key/stream', (req: Request, res: Response) => {
   const { key } = req.params;
   const businessId = key.includes('--') ? key.split('--')[0] : key;
   if (!requireOwnershipIfSession(businessId.trim(), req, res)) return;
-  let process = getAgent(key);
-  if (!process && key.endsWith('--ceo')) {
-    process = getAgent(key.slice(0, -'--ceo'.length) + '---ceo');
-  }
+  const process = getAgent(key);
   if (!process) {
     logger.warn('stream_not_found', { key });
     res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN ?? '*');
@@ -111,6 +118,7 @@ app.get('/api/business/:id/stream', (req: Request, res: Response) => {
 app.get('/api/admin/stream', (_req: Request, res: Response) => {
   const processes = getAllAgents();
   sseHeaders(res);
+  registerAdminSseConnection(res);
   if (processes.length === 0) {
     res.write(`data: ${JSON.stringify({ type: 'info', message: 'No agents yet' })}\n\n`);
   }
@@ -161,8 +169,9 @@ app.post('/api/business/create', async (req: Request, res: Response) => {
       body.name,
       body.founder_prompt,
     );
-    if (body.founder_session_id) {
-      setBusinessFounder(businessId, body.founder_session_id);
+    const founderSid = body.founder_session_id?.trim() || getSessionId(req);
+    if (founderSid) {
+      setBusinessFounder(businessId, founderSid);
     }
     logger.info('business_create_ok', { businessId, key: result.agentKey });
     res.status(201).json(result);
@@ -221,7 +230,7 @@ app.post('/api/business/:id/message', async (req: Request, res: Response) => {
 
     const ceoProcess = getProcessesForBusiness(businessId).find((p) => p.agentId === 'ceo');
     if (ceoProcess) {
-      ceoProcess.enqueuePrompt(`The founder sent you a message: "${content}". Reply to the founder in your next response — they see your reply in the chat. Then check your swarm bus inbox if needed.`);
+      ceoProcess.enqueueFounderMessageFromUser(content);
     }
 
     res.status(200).json({ ok: true });
@@ -238,6 +247,23 @@ app.get('/api/business/:id/status', (req: Request, res: Response) => {
   const processes = getProcessesForBusiness(businessId);
   const paused = processes.length > 0 && processes.every((p) => p.isPaused());
   res.json({ paused });
+});
+
+/** GET /api/business/:id/agent-keys — Orchestrator + Swarm Bus union (mosaic tiles). */
+app.get('/api/business/:id/agent-keys', async (req: Request, res: Response) => {
+  const businessId = req.params.id?.trim();
+  if (!businessId) {
+    res.status(400).json({ error: 'business_id required' });
+    return;
+  }
+  if (!requireOwnershipIfSession(businessId, req, res)) return;
+  try {
+    const agents = await getMergedAgentKeysForBusiness(businessId);
+    res.json({ agents });
+  } catch (err) {
+    logger.error('business_agent_keys_error', { businessId, error: String((err as Error).message) });
+    res.status(500).json({ error: String((err as Error).message) });
+  }
 });
 
 /** GET /api/business/:id/tree — Filesystem tree (knowledge/, agents/<role>/workspace/, …). */
@@ -336,6 +362,21 @@ app.post('/api/agents/:key/screencast', (req: Request, res: Response) => {
   res.status(200).json({ ok: true });
 });
 
+/**
+ * GET /api/agents/:key/cycle — Whether this agent is mid–Vibe cycle (child process running).
+ * Swarm Bus wake engine calls this before POST /wake so wakes are not sent while work is in progress.
+ */
+app.get('/api/agents/:key/cycle', (req: Request, res: Response) => {
+  const { key } = req.params;
+  const process = getAgent(key);
+  if (!process) {
+    res.status(404).json({ error: 'Agent not found', key });
+    return;
+  }
+  const running = process.isRunningCycle();
+  res.json({ running });
+});
+
 /** POST /api/agents/:key/wake — Webhook from Swarm Bus Wake Engine (task_based agents). */
 app.post('/api/agents/:key/wake', (req: Request, res: Response) => {
   const { key } = req.params;
@@ -349,14 +390,19 @@ app.post('/api/agents/:key/wake', (req: Request, res: Response) => {
     res.status(200).json({ ok: true, status: 'already_running_woke' });
     return;
   }
+  const ceoInboxDeferred =
+    key.endsWith('--ceo') && process.isWaitingForFounderAnswer();
   if (key.endsWith('--ceo')) {
     process.enqueuePrompt(
-      'You have new messages from your team. Check your swarm bus inbox (swarm_check_inbox), then respond briefly to each director with acknowledgment or next steps. Keep responses concise.',
+      'Wake: if still in first-turn onboarding, clarify then spawn; else inbox and agents. Short.',
     );
   }
   process.wake();
   process.start().catch((err) => logger.error('wake_start_error', { key, error: String((err as Error).message) }));
-  res.status(200).json({ ok: true, status: 'woken' });
+  res.status(200).json({
+    ok: true,
+    status: ceoInboxDeferred ? 'ceo_inbox_deferred_until_founder' : 'woken',
+  });
 });
 
 export { app };
@@ -365,5 +411,26 @@ const PORT = Number(process.env.ORCHESTRATOR_PORT) || 3000;
 if (!process.env.VITEST) {
   app.listen(PORT, () => {
     logger.info('listening', { port: PORT, url: `http://localhost:${PORT}` });
+    const inferenceConfig = getInferenceConfig();
+    if (inferenceConfig) {
+      const requiredModels = [getLocalLlmModel()];
+      checkInferenceHealthWithRetry(inferenceConfig, requiredModels, ({ healthy, available, missing }) => {
+        if (healthy) {
+          logger.info('inference_ready', {
+            type: inferenceConfig.type,
+            api_base: inferenceConfig.apiBase,
+            available,
+            missing,
+          });
+        } else {
+          logger.warn('inference_not_reachable', {
+            type: inferenceConfig.type,
+            api_base: inferenceConfig.apiBase,
+            health_endpoint: inferenceConfig.healthEndpoint,
+            hint: 'Is the inference server (e.g. llama-server) running on 8080?',
+          });
+        }
+      });
+    }
   });
 }

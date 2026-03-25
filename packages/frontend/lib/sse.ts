@@ -1,8 +1,10 @@
+import { getOrCreateFounderSessionId } from './session-id';
+
 export type StreamEvent =
   | { type: 'activity'; msg?: { role?: string; content?: string | unknown[]; type?: string; name?: string }; agent?: string }
   | { type: 'mode_switch'; mode?: string; agent?: string }
   | { type: 'info'; message?: string }
-  | { type: 'ask_user'; questions?: unknown[] }
+  | { type: 'ask_user'; questions?: unknown[]; agent?: string }
   | { type: 'screencast_frame'; frame?: string; agent?: string }
   | { type: 'raw'; data?: string; agent?: string }
   | { type: 'error'; data?: string; agent?: string }
@@ -13,14 +15,40 @@ const MAX_RECONNECT_MS = 30000;
 
 const CONNECTION_FAILED_AFTER_RETRIES = 4;
 
-/** Parse SSE stream via fetch — more reliable than EventSource through Next.js proxy. */
+/** Parse one SSE event block (content between blank lines). Joins multi-line `data:` per HTML spec. */
+function dataPayloadFromEventBlock(block: string): string | null {
+  const lines = block.split('\n').filter((l) => l.length > 0);
+  const dataLines = lines.filter((l) => l.startsWith('data:'));
+  if (dataLines.length === 0) return null;
+  const joined = dataLines
+    .map((l) => {
+      const after = l.slice(5);
+      return after.startsWith(' ') ? after.slice(1) : after;
+    })
+    .join('\n');
+  if (joined.trim() === '[DONE]') return null;
+  return joined;
+}
+
+/**
+ * Read fetch body as SSE: events are separated by blank lines (\n\n).
+ * Chunks may split mid-event; we buffer until a full event is available.
+ */
 async function streamWithFetch(
   streamUrl: string,
   onEvent: (event: StreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
+  const founderHeader =
+    typeof window !== 'undefined' && streamUrl.includes('/api/orchestrator')
+      ? (() => {
+          const id = getOrCreateFounderSessionId();
+          return id ? ({ 'X-Founder-Session-Id': id } as Record<string, string>) : {};
+        })()
+      : {};
   const res = await fetch(streamUrl, {
-    headers: { Accept: 'text/event-stream' },
+    headers: { Accept: 'text/event-stream', ...founderHeader },
+    credentials: 'same-origin',
     cache: 'no-store',
     signal,
   });
@@ -28,22 +56,35 @@ async function streamWithFetch(
   onEvent({ type: 'info', message: 'connected' });
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  let carry = '';
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6)) as StreamEvent;
-            onEvent(data);
-          } catch {
-            // ignore parse errors
-          }
+      carry += decoder.decode(value, { stream: true });
+      carry = carry.replace(/\r\n/g, '\n');
+      let sep: number;
+      while ((sep = carry.indexOf('\n\n')) !== -1) {
+        const block = carry.slice(0, sep);
+        carry = carry.slice(sep + 2);
+        const payload = dataPayloadFromEventBlock(block);
+        if (payload == null) continue;
+        try {
+          const data = JSON.parse(payload) as StreamEvent;
+          onEvent(data);
+        } catch {
+          // ignore non-JSON noise
+        }
+      }
+    }
+    // Trailing block without trailing \n\n (some servers)
+    if (carry.trim()) {
+      const payload = dataPayloadFromEventBlock(carry.replace(/\r\n/g, '\n'));
+      if (payload) {
+        try {
+          onEvent(JSON.parse(payload) as StreamEvent);
+        } catch {
+          /* ignore */
         }
       }
     }
@@ -107,7 +148,6 @@ export function subscribeBusinessStream(
 /**
  * Generic fetch-based SSE subscription with optional retry. Use for orchestrator
  * streams (activity, mode_switch, screencast_frame) through proxy or direct URL.
- * Returns cleanup; call it on unmount to abort and stop reconnecting.
  */
 export function subscribeStream(
   streamUrl: string,

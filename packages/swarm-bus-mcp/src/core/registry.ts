@@ -3,6 +3,7 @@
  */
 import type { AgentRegistration } from '../types.js';
 import { getRedis } from './redis.js';
+import { slugifyRole } from './role-slug.js';
 
 const agents = new Map<string, AgentRegistration>();
 
@@ -90,12 +91,13 @@ export async function getAgent(agentId: string): Promise<AgentRegistration | und
 }
 
 export async function resolveRole(businessId: string, role: string): Promise<string | undefined> {
+  const slug = slugifyRole(role);
   const redis = await getRedis();
   if (redis) {
-    const agentId = await redis.get(roleKey(businessId, role));
+    const agentId = await redis.get(roleKey(businessId, slug));
     return agentId ?? undefined;
   }
-  const candidateId = `${businessId}--${role}`;
+  const candidateId = `${businessId}--${slug}`;
   const a = agents.get(candidateId);
   return a ? a.agent_id : undefined;
 }

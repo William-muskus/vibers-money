@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { subscribeStream } from '@/lib/sse';
+import { roleTitleFromSlug } from '@/lib/role-title';
 
 const SWARM_BUS_URL = process.env.NEXT_PUBLIC_SWARM_BUS_URL || 'http://localhost:3100';
 
@@ -12,12 +13,14 @@ type BusEvent =
 
 function formatEvent(ev: BusEvent): string {
   if (ev.type === 'message') {
-    const fromRole = ev.from_role || ev.from_agent_id?.split('--')[1] || '?';
-    const toRole = ev.to_agent_id?.split('--')[1] || '?';
+    const fromSlug = ev.from_role || ev.from_agent_id?.split('--')[1] || '?';
+    const toSlug = ev.to_agent_id?.split('--')[1] || '?';
+    const fromRole = fromSlug === '?' ? '?' : roleTitleFromSlug(fromSlug);
+    const toRole = toSlug === '?' ? '?' : roleTitleFromSlug(toSlug);
     return `[${ev.business_id}] ${fromRole} → ${toRole}: "${ev.content.slice(0, 60)}${ev.content.length > 60 ? '…' : ''}"`;
   }
   if (ev.type === 'agent_registered') {
-    return `[${ev.business_id}] Agent registered: ${ev.role}`;
+    return `[${ev.business_id}] Agent registered: ${roleTitleFromSlug(ev.role)}`;
   }
   if (ev.type === 'agent_deregistered') {
     return `Agent left: ${ev.agent_id}`;

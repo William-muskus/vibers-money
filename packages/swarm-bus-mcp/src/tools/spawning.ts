@@ -13,7 +13,9 @@ export function createSpawningTools() {
     swarm_spawn_agent: {
       description: 'Spawn a new agent (e.g. department manager or specialist). Pass a mission brief and 3–5 macro objectives so the agent can self-configure and build their initial task list. Forwards to Orchestrator to create workspace and launch Vibe. Only CEO or department managers can spawn; hierarchy is enforced.',
       inputSchema: {
-        role: z.string().describe('Role name (e.g. community-manager, marketing-director)'),
+        role: z.string().describe(
+          'Role in kebab-case (e.g. security-director, marketing-director). Display titles like "Security Director" are normalized to the same slug.',
+        ),
         business: z.string().describe('Business ID (must match your business)'),
         mission: z.string().describe('Mission brief for the new agent (2–4 sentences).'),
         macro_objectives: z.array(z.string()).min(1).describe('Required. List of 3–5 macro objectives (concrete outcomes). The agent uses these to write skills and create their initial todo list.'),

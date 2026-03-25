@@ -7,13 +7,33 @@ const DB_NAME = 'vibers_local';
 const STORE_NAME = 'vibers_store';
 
 export type ChatMessage =
-  | { kind: 'text'; id?: string; role: 'user' | 'assistant'; content: string }
+  | {
+      kind: 'text';
+      /** Stable React list key (survives reorder); not from the model. */
+      clientKey?: string;
+      id?: string;
+      role: 'user' | 'assistant';
+      content: string;
+      /** Model reasoning / chain-of-thought (shown in collapsible “Thought” block). */
+      reasoning?: string;
+      /** First reasoning chunk time (ms) for “Thought for Xs”. */
+      thoughtStartedAt?: number;
+      /** First non-empty answer token time (ms). */
+      thoughtEndedAt?: number;
+    }
+  | {
+      kind: 'activity';
+      clientKey?: string;
+      id?: string;
+      /** tool_use / tool_result snapshot from orchestrator SSE (JSON-serializable). */
+      msg: Record<string, unknown>;
+    }
   | { kind: 'ask_user'; id?: string; questions: AskUserQuestion[] };
 
-interface AskUserQuestion {
+export interface AskUserQuestion {
   question: string;
   header?: string;
-  options: { label: string; description?: string }[];
+  options?: { label: string; description?: string }[];
   multi_select?: boolean;
 }
 
@@ -44,6 +64,10 @@ function isValidMessage(m: unknown): m is ChatMessage {
   if (k === 'text') {
     const r = (m as { role?: string }).role;
     return r === 'user' || r === 'assistant';
+  }
+  if (k === 'activity') {
+    const doc = m as { msg?: unknown };
+    return doc.msg != null && typeof doc.msg === 'object' && !Array.isArray(doc.msg);
   }
   if (k === 'ask_user') return Array.isArray((m as { questions?: unknown }).questions);
   return false;

@@ -7,12 +7,13 @@ import { getMyBusinessIds, syncWithServerAndRemoveDeleted } from '@/lib/local-bu
 
 export default function ChatSidebar({ currentBusinessId = '' }: { currentBusinessId?: string }) {
   const pathname = usePathname();
-  const [businessIds, setBusinessIds] = useState<string[]>([]);
+  /** `null` = not loaded yet (don’t flash stale localStorage before server sync). */
+  const [businessIds, setBusinessIds] = useState<string[] | null>(null);
   const [open, setOpen] = useState(true);
 
   const refreshList = useCallback(() => {
-    syncWithServerAndRemoveDeleted().then(() => {
-      setBusinessIds(getMyBusinessIds());
+    void syncWithServerAndRemoveDeleted().then((fromServer) => {
+      setBusinessIds(fromServer ?? getMyBusinessIds());
     });
   }, []);
 
@@ -71,7 +72,9 @@ export default function ChatSidebar({ currentBusinessId = '' }: { currentBusines
                     Launch a new business
                   </Link>
                 </li>
-                {businessIds.length === 0 ? (
+                {businessIds === null ? (
+                  <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Loading…</li>
+                ) : businessIds.length === 0 ? (
                   <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">No businesses yet</li>
                 ) : (
                   businessIds.filter((id) => id != null && String(id).trim() !== '').map((id, i) => {

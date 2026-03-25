@@ -1,0 +1,15 @@
+{
+  "name": "@vibers/inference-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "scripts": {
+    "dev:inference": "node scripts/start-llama-server.js",
+    "download-models": "node scripts/download-models.js",
+    "install:llama-server": "powershell -ExecutionPolicy Bypass -File scripts/install-llama-server.ps1"
+  },
+  "description": "llama.cpp (llama-server) inference for Vibers — optimized with flash attention, speculative decoding, parallel slots."
+}

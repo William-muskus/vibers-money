@@ -1,5 +1,6 @@
-# Kill processes using dev ports (3000, 3001, 3100, 3200)
-$ports = 3000, 3001, 3100, 3200
+# Kill processes using dev ports only (orchestrator, frontend, swarm-bus, computer-use, llama-server).
+# We do NOT kill 6379 (Redis/Memurai) so existing Redis stays running.
+$ports = 3000, 3001, 3100, 3200, 8080
 foreach ($port in $ports) {
   $conn = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
   if ($conn) {

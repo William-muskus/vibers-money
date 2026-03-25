@@ -1,16 +1,17 @@
 import type { NextConfig } from 'next';
+import { loadEnvConfig } from '@next/env';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { withSentryConfig } from '@sentry/nextjs';
 
-const orchestratorUrl = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://localhost:3000';
+// Monorepo: Next only auto-loads env from packages/frontend; secrets live in repo-root .env
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+loadEnvConfig(path.resolve(__dirname, '../..'));
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
-  async rewrites() {
-    return [
-      // Proxy orchestrator API to avoid CORS (EventSource blocked cross-origin in some browsers)
-      { source: '/api/orchestrator/:path*', destination: `${orchestratorUrl}/api/:path*` },
-    ];
-  },
+  // Do not rewrite /api/orchestrator/* to the raw orchestrator: App Router route handlers
+  // must run first (auth + SSE proxy). A blanket rewrite can bypass them and break streaming.
 };
 
 export default process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN

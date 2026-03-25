@@ -4,10 +4,10 @@
  */
 // @ts-expect-error no types for chrome-remote-interface
 import CDP from 'chrome-remote-interface';
+import { CDP_HOST, CDP_PORT } from '../cdp-config.js';
 import { logger } from '../logger.js';
 
-export const CDP_HOST = process.env.CDP_HOST || 'localhost';
-export const CDP_PORT = Number(process.env.CDP_PORT) || 9222;
+export { CDP_HOST, CDP_PORT };
 
 const cdpOptions = () => ({ host: CDP_HOST, port: CDP_PORT });
 
@@ -22,7 +22,11 @@ export async function getClient(): Promise<Awaited<ReturnType<typeof CDP>>> {
     return defaultClient;
   } catch (err) {
     logger.error('cdp_connect_failed', { host: CDP_HOST, port: CDP_PORT, error: String((err as Error).message) });
-    throw new Error(`Cannot connect to Chrome CDP at ${CDP_HOST}:${CDP_PORT}. Start Chrome with --remote-debugging-port=${CDP_PORT}. Error: ${(err as Error).message}`);
+    throw new Error(
+      `Cannot connect to Chrome CDP at ${CDP_HOST}:${CDP_PORT}. ` +
+        `Start Chrome with --remote-debugging-port=${CDP_PORT}, or run \`npm run dev:computer-use\` (auto-starts Chrome when local). ` +
+        `Error: ${(err as Error).message}`,
+    );
   }
 }
 

@@ -16,6 +16,7 @@
     "@sentry/nextjs": "^8.45.0",
     "better-sqlite3": "^12.6.2",
     "d3": "^7.9.0",
+    "dotenv": "^16.4.5",
     "drizzle-orm": "^0.45.1",
     "ioredis": "^5.4.1",
     "next": "15.0.3",
@@ -23,6 +24,10 @@
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "stripe": "^17.4.0"
   },
   "devDependencies": {

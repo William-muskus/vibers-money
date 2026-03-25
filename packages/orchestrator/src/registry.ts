@@ -3,6 +3,7 @@
  * Spawner registers agents here when starting them.
  */
 import type { AgentProcess } from './agent-process.js';
+import { attachNewAgentToAdminStreams } from './admin-sse.js';
 import { logger } from './logger.js';
 import { clearForTesting as clearOwnershipForTesting } from './ownership.js';
 
@@ -15,6 +16,7 @@ export function registerAgent(process: AgentProcess): void {
   list.push(process);
   byBusiness.set(process.businessId, list);
   logger.info('registry_register', { key: process.key, businessId: process.businessId, totalAgents: byKey.size });
+  attachNewAgentToAdminStreams(process);
 }
 
 export function unregisterAgent(process: AgentProcess): void {

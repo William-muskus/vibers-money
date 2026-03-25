@@ -79,28 +79,28 @@ export function removeMyBusinessId(businessId: string): void {
 }
 
 /**
- * Fetch business IDs that exist on disk from the server; remove from local cache
- * and clear CEO chat IndexedDB for any cached business that no longer exists.
- * Call when loading the app or sidebar so deleted folders disappear from the UI.
+ * Fetch business IDs from the orchestrator (disk on server) and **replace** the local list with that
+ * result — server is the source of truth. Removes stale local-only entries and picks up new businesses.
+ * Clears CEO chat IndexedDB for businesses that disappeared on disk.
+ * @returns The server list on success, or `null` if the request failed (cache unchanged).
  */
-export async function syncWithServerAndRemoveDeleted(): Promise<void> {
-  if (typeof window === 'undefined') return;
+export async function syncWithServerAndRemoveDeleted(): Promise<string[] | null> {
+  if (typeof window === 'undefined') return null;
   try {
     const { getAdminBusinesses } = await import('./admin-api');
     const { businessIds: validIds } = await getAdminBusinesses();
-    const validSet = new Set(validIds ?? []);
+    const next = [...new Set((validIds ?? []).filter((id) => typeof id === 'string' && id.trim() !== ''))];
     const cached = read();
-    const kept = cached.filter((id) => validSet.has(id));
-    const removed = cached.filter((id) => !validSet.has(id));
-    if (kept.length !== cached.length) {
-      write(kept);
-      await setMyBusinessIdsInIdb(kept);
-      for (const id of removed) {
-        deleteCeoChatMessagesFromIdb(id).catch(() => {});
-      }
+    const removed = cached.filter((id) => !next.includes(id));
+    write(next);
+    await setMyBusinessIdsInIdb(next).catch(() => {});
+    for (const id of removed) {
+      deleteCeoChatMessagesFromIdb(id).catch(() => {});
     }
+    return next;
   } catch {
     // offline or orchestrator down — leave cache as-is
+    return null;
   }
 }
 
